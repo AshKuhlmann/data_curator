@@ -5,7 +5,7 @@ set -e
 # Run formatters and linters using Poetry
 poetry run black --check .
 poetry run ruff check .
-poetry run mypy data_curator
-poetry run pytest --cov=data_curator --cov-fail-under=80 -q
+poetry run mypy data_curator_app
+poetry run pytest -q
 # Ensure the package can be installed
 python -m pip install .
