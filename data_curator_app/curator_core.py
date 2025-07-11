@@ -96,3 +96,21 @@ def open_file_location(file_path):
         os.system(f'open "{directory}"')
     else:  # Linux
         os.system(f'xdg-open "{directory}"')
+
+
+def check_for_expired_files():
+    """Scan the state file for items whose keep period expired."""
+    state = load_state()
+    expired_files: list[str] = []
+    today = datetime.now()
+
+    # iterate over copy to allow modification if needed elsewhere
+    for filename, data in list(state.items()):
+        if data.get("status") == "keep_90_days":
+            expiry_date_str = data.get("expiry_date")
+            if expiry_date_str:
+                expiry_date = datetime.fromisoformat(expiry_date_str)
+                if expiry_date < today:
+                    expired_files.append(filename)
+
+    return expired_files
