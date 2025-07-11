@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
+from tkinter import ttk
+import csv
 
 from typing import Any
 
@@ -205,9 +207,13 @@ class DataCuratorApp(tk.Tk):
             self.show_preview()
 
     def show_preview(self) -> None:
-        """Display a preview of the currently selected file."""
+        """Displays a preview of the currently selected file."""
 
         self.preview_canvas.delete("all")
+        # Destroy any old widgets in the canvas, like the Treeview
+        for widget in self.preview_canvas.winfo_children():
+            widget.destroy()
+
         if self.current_file_index < 0 or self.current_file_index >= len(
             self.file_list
         ):
@@ -217,7 +223,11 @@ class DataCuratorApp(tk.Tk):
         file_path = os.path.join(self.repository_path, filename)
 
         try:
+            # --- MODIFY THIS WHOLE LOGIC BLOCK ---
+
+            # Image Preview
             if filename.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp")):
+                # This part remains the same...
                 img = Image.open(file_path)
                 canvas_width = self.preview_canvas.winfo_width()
                 canvas_height = self.preview_canvas.winfo_height()
@@ -234,7 +244,70 @@ class DataCuratorApp(tk.Tk):
                     anchor=tk.CENTER,
                     image=self.photo_image,
                 )
+
+            # PDF Preview
+            elif filename.lower().endswith(".pdf"):
+                import fitz  # type: ignore[import]  # PyMuPDF
+
+                doc = fitz.open(file_path)
+                page = doc.load_page(0)  # Get the first page
+                pix = page.get_pixmap()
+                img_pil = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+
+                canvas_width = self.preview_canvas.winfo_width()
+                canvas_height = self.preview_canvas.winfo_height()
+                if canvas_width < 2 or canvas_height < 2:
+                    self.after(50, self.show_preview)
+                    return
+                img_pil.thumbnail(
+                    (canvas_width - 20, canvas_height - 20), Image.Resampling.LANCZOS
+                )
+
+                self.photo_image = ImageTk.PhotoImage(img_pil)
+                self.preview_canvas.create_image(
+                    canvas_width / 2,
+                    canvas_height / 2,
+                    anchor=tk.CENTER,
+                    image=self.photo_image,
+                )
+                doc.close()
+
+            # CSV Preview
+            elif filename.lower().endswith(".csv"):
+                # Create a frame to hold the Treeview and scrollbars
+                csv_frame = tk.Frame(self.preview_canvas)
+                self.preview_canvas.create_window(0, 0, window=csv_frame, anchor="nw")
+
+                tree = ttk.Treeview(csv_frame, show="headings")
+
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    reader = csv.reader(f)
+                    header = next(reader, None)
+                    if header:
+                        tree["columns"] = header
+                        for col in header:
+                            tree.heading(col, text=col)
+                            tree.column(col, width=100)
+
+                    for i, row in enumerate(reader):
+                        if i < 100:  # Limit to previewing the first 100 rows
+                            if header and len(row) == len(
+                                header
+                            ):  # Ensure row matches header count
+                                tree.insert("", "end", values=row)
+
+                # Add scrollbars
+                vsb = ttk.Scrollbar(csv_frame, orient="vertical", command=tree.yview)
+                hsb = ttk.Scrollbar(csv_frame, orient="horizontal", command=tree.xview)
+                tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+                vsb.pack(side="right", fill="y")
+                hsb.pack(side="bottom", fill="x")
+                tree.pack(side="left", fill="both", expand=True)
+
+            # Text Preview (the default fallback)
             else:
+                # This part remains the same...
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read(5000)
                 text_widget = tk.Text(
@@ -254,6 +327,7 @@ class DataCuratorApp(tk.Tk):
                     width=self.preview_canvas.winfo_width(),
                     height=self.preview_canvas.winfo_height(),
                 )
+
         except Exception as e:  # pylint: disable=broad-except
             self.preview_canvas.create_text(
                 10,
