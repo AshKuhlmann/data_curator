@@ -30,6 +30,7 @@ class DataCuratorApp(tk.Tk):
         self.last_action: dict[str, Any] | None = None
 
         self.create_widgets()
+        self.bind("<KeyPress>", self.handle_keypress)
 
     def create_widgets(self) -> None:
         """Create all widgets used by the interface."""
@@ -80,7 +81,7 @@ class DataCuratorApp(tk.Tk):
 
         tk.Button(
             action_frame,
-            text="Keep (Forever)",
+            text="Keep (K)",
             **btn_config,
             bg="#4CAF50",
             fg="white",
@@ -89,7 +90,7 @@ class DataCuratorApp(tk.Tk):
 
         tk.Button(
             action_frame,
-            text="Keep (90 days)",
+            text="Temp Keep (T)",
             **btn_config,
             bg="#8BC34A",
             fg="white",
@@ -98,7 +99,7 @@ class DataCuratorApp(tk.Tk):
 
         tk.Button(
             action_frame,
-            text="Rename",
+            text="Rename (R)",
             **btn_config,
             bg="#2196F3",
             fg="white",
@@ -107,7 +108,7 @@ class DataCuratorApp(tk.Tk):
 
         tk.Button(
             action_frame,
-            text="Open Location",
+            text="Open (O)",
             **btn_config,
             bg="#FFC107",
             command=self.open_location,
@@ -115,7 +116,7 @@ class DataCuratorApp(tk.Tk):
 
         tk.Button(
             action_frame,
-            text="Decide Later",
+            text="Next (→)",
             **btn_config,
             bg="#607D8B",
             fg="white",
@@ -124,7 +125,7 @@ class DataCuratorApp(tk.Tk):
 
         tk.Button(
             action_frame,
-            text="DELETE",
+            text="DELETE (D)",
             **btn_config,
             bg="#f44336",
             fg="white",
@@ -133,12 +134,35 @@ class DataCuratorApp(tk.Tk):
 
         tk.Button(
             action_frame,
-            text="Undo Last",
+            text="Undo (Ctrl+Z)",
             **btn_config,
             bg="#FF9800",
             fg="white",
             command=self.undo_last_action,
         ).pack(side=tk.RIGHT, padx=5)
+
+    def handle_keypress(self, event: tk.Event) -> None:
+        """Handles global key presses to trigger actions."""
+        # We don't want shortcuts firing while typing in a dialog box (like Rename)
+        if self.focus_get() is not self:
+            return
+
+        key = event.keysym.lower()
+
+        if key == "k":
+            self.process_file("keep_forever")
+        elif key == "t":
+            self.process_file("keep_90_days")
+        elif key == "r":
+            self.rename_current_file()
+        elif key == "o":
+            self.open_location()
+        elif key == "d":
+            self.delete_current_file()
+        elif key == "right" or key == "space":
+            self.next_file()
+        elif (int(event.state) & 4) and key == "z":
+            self.undo_last_action()
 
     def handle_expired_files(self) -> None:
         """Check for files whose temporary keep period has ended."""
