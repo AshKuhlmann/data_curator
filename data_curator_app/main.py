@@ -27,6 +27,7 @@ class DataCuratorApp(tk.Tk):
         self.repository_path = ""
         self.file_list: list[str] = []
         self.current_file_index = -1
+        self.last_action: dict[str, Any] | None = None
 
         self.create_widgets()
 
@@ -128,6 +129,15 @@ class DataCuratorApp(tk.Tk):
             bg="#f44336",
             fg="white",
             command=self.delete_current_file,
+        ).pack(side=tk.RIGHT, padx=5)
+
+        tk.Button(
+            action_frame,
+            text="Undo Last",
+            **btn_config,
+            bg="#FF9800",
+            fg="white",
+            command=self.undo_last_action,
         ).pack(side=tk.RIGHT, padx=5)
 
     def handle_expired_files(self) -> None:
@@ -344,6 +354,15 @@ class DataCuratorApp(tk.Tk):
             return
 
         filename = self.file_list[self.current_file_index]
+
+        state = core.load_state()
+        old_status = state.get(filename, {}).get("status", "new")
+        self.last_action = {
+            "type": "status_change",
+            "filename": filename,
+            "old_status": old_status,
+        }
+
         core.update_file_status(filename, status)
         self.next_file()
 
@@ -359,9 +378,15 @@ class DataCuratorApp(tk.Tk):
             "Rename File", "Enter new name:", initialvalue=old_filename
         )
         if new_name and new_name != old_filename:
+            self.last_action = {
+                "type": "rename",
+                "old_path": old_path,
+                "new_name": new_name,
+            }
             if core.rename_file(old_path, new_name):
                 self.next_file(reload_list=True)
             else:
+                self.last_action = None
                 messagebox.showerror("Error", f"Could not rename {old_filename}.")
 
     def delete_current_file(self) -> None:
@@ -376,10 +401,48 @@ class DataCuratorApp(tk.Tk):
             "Confirm Delete",
             f"Are you sure you want to permanently delete\n{filename}?",
         ):
+            self.last_action = None
             if core.delete_file(file_path):
                 self.next_file(reload_list=True)
             else:
                 messagebox.showerror("Error", f"Could not delete {filename}.")
+
+    def undo_last_action(self) -> None:
+        """Reverts the last stored action."""
+
+        if not self.last_action:
+            messagebox.showinfo("Undo", "Nothing to undo.")
+            return
+
+        action = self.last_action
+        try:
+            if action["type"] == "status_change":
+                filename = action["filename"]
+                old_status = action["old_status"]
+                if old_status == "new":
+                    state = core.load_state()
+                    if filename in state:
+                        del state[filename]
+                    core.save_state(state)
+                else:
+                    core.update_file_status(filename, old_status)
+                print(f"UNDO: Reverted '{filename}' to status '{old_status}'")
+
+            elif action["type"] == "rename":
+                old_path = action["old_path"]
+                new_name = action["new_name"]
+                new_path = os.path.join(self.repository_path, new_name)
+                core.rename_file(new_path, os.path.basename(old_path))
+                print(
+                    f"UNDO: Renamed '{new_name}' back to '{os.path.basename(old_path)}'"
+                )
+
+            messagebox.showinfo("Undo", "Last action has been undone.")
+        except Exception as e:  # pylint: disable=broad-except
+            messagebox.showerror("Undo Error", f"Could not perform undo: {e}")
+
+        self.last_action = None
+        self.load_files()
 
     def open_location(self) -> None:
         """Open the directory of the currently selected file."""
