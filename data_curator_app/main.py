@@ -128,6 +128,45 @@ class DataCuratorApp(tk.Tk):
             command=self.delete_current_file,
         ).pack(side=tk.RIGHT, padx=5)
 
+    def handle_expired_files(self) -> None:
+        """Check for files whose temporary keep period has ended."""
+        if not self.repository_path:
+            return
+
+        expired_files = core.check_for_expired_files()
+        if not expired_files:
+            return
+
+        messagebox.showinfo(
+            "Expired Files Found",
+            f"Found {len(expired_files)} file(s) whose temporary keep period has ended. Please review them.",
+        )
+
+        for filename in expired_files:
+            file_path = os.path.join(self.repository_path, filename)
+            if not os.path.exists(file_path):
+                core.update_file_status(filename, "missing")
+                continue
+
+            action = messagebox.askquestion(
+                "Expired File: " + filename,
+                (
+                    f"The temporary keep period for '{filename}' has expired.\n\n"
+                    "Do you want to DELETE it? (Yes=Delete, No=Keep Forever)"
+                ),
+                icon="warning",
+                type=messagebox.YESNOCANCEL,
+            )
+
+            if action == messagebox.YES:
+                print(f"Deleting expired file: {filename}")
+                core.delete_file(file_path)
+            elif action == messagebox.NO:
+                print(f"Updating expired file to keep forever: {filename}")
+                core.update_file_status(filename, "keep_forever")
+            else:
+                print(f"Ignoring expired file for now: {filename}")
+
     def select_repository(self) -> None:
         """Prompt the user to choose a repository to scan."""
 
@@ -136,6 +175,7 @@ class DataCuratorApp(tk.Tk):
             self.repository_path = path
             core.TARGET_REPOSITORY = path
             self.repo_label.config(text=f"Current: {self.repository_path}", fg="black")
+            self.handle_expired_files()
             self.load_files()
 
     def load_files(self) -> None:
