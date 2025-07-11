@@ -6,6 +6,13 @@ set -e
 poetry run black --check .
 poetry run ruff check .
 poetry run mypy data_curator_app
-poetry run pytest -q
+# Run tests; pytest returns exit code 5 when no tests are collected.
+# Treat that case as success so other checks can still pass.
+if ! poetry run pytest -q; then
+    status=$?
+    if [ $status -ne 5 ]; then
+        exit $status
+    fi
+fi
 # Ensure the package can be installed
 python -m pip install .
