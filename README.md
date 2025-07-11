@@ -13,3 +13,26 @@ pip install -r requirements.txt
 # 4. Run the application
 python data_curator_app.py
 How to UseLaunch Data Curator.Click "Select Repository" and choose a folder you want to clean up.The first un-curated file will be loaded into the list and its preview will be shown.Use the action buttons at the bottom of the window to process the file.The app will automatically move to the next file. Continue until the review list is empty.Close the app at any time. Your progress is always saved.ContributingContributions are welcome! Whether it's a bug report, a feature request, or a pull request, your input is valued. Please feel free to open an issue to discuss your ideas.If you'd like to contribute code:Fork the repository.Create a new branch for your feature (git checkout -b feature/AmazingFeature).Commit your changes (git commit -m 'Add some AmazingFeature').Push to the branch (git push origin feature/AmazingFeature).Open a Pull Request.LicenseThis project is licensed under the GNU General Public License v3.0. See the LICENSE file for more details. This means you are free to use, study, share, and modify the software.
+
+## Building an Executable
+
+1. **Add PyInstaller**
+   Add PyInstaller as a development dependency so it isn't included in the final package:
+
+   ```bash
+   poetry add pyinstaller --group dev
+   ```
+
+2. **Run the Packaging Command**
+   Run this from the project root to bundle the app:
+
+   ```bash
+   poetry run pyinstaller --onefile --windowed --name DataCurator data_curator_app/main.py
+   ```
+
+   - `--onefile`: Creates a single executable file.
+   - `--windowed`: Prevents a black console window from appearing.
+   - `--name DataCurator`: Sets the name of your final executable.
+   - `data_curator_app/main.py`: Entry point of the application.
+
+After the command finishes, the executable will be available in the `dist` folder. You can now share that single file with others!
