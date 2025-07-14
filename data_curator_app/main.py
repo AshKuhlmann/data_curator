@@ -59,7 +59,7 @@ class DataCuratorApp(tk.Tk):
             list_frame, text="Files to Review", font=("Helvetica", 12, "bold")
         ).grid(row=0, column=0, sticky="w")
 
-        self.file_listbox = tk.Listbox(list_frame, selectmode=tk.SINGLE)
+        self.file_listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED)
         self.file_listbox.grid(row=1, column=0, sticky="nswe")
         self.file_listbox.bind("<<ListboxSelect>>", self.on_file_select)
 
@@ -233,12 +233,36 @@ class DataCuratorApp(tk.Tk):
             messagebox.showinfo("All Done!", "No files to review in this repository.")
 
     def on_file_select(self, event: tk.Event) -> None:  # noqa: D401
-        """Handle selection of a file from the list."""
+        """Handle selection of one or more files from the list."""
 
         selection_indices = self.file_listbox.curselection()
-        if selection_indices:
+
+        self.preview_canvas.delete("all")
+        for widget in self.preview_canvas.winfo_children():
+            widget.destroy()
+
+        if not selection_indices:
+            return
+        elif len(selection_indices) == 1:
             self.current_file_index = selection_indices[0]
             self.show_preview()
+        else:
+            total_size = 0
+            for i in selection_indices:
+                try:
+                    total_size += os.path.getsize(
+                        os.path.join(self.repository_path, self.file_list[i])
+                    )
+                except OSError:
+                    pass
+
+            info_text = (
+                f"{len(selection_indices)} files selected\n\n"
+                f"Total size: {total_size / (1024*1024):.2f} MB"
+            )
+            self.preview_canvas.create_text(
+                20, 20, anchor=tk.NW, text=info_text, font=("Helvetica", 14)
+            )
 
     def show_preview(self) -> None:
         """Displays a preview of the currently selected file."""
@@ -372,64 +396,60 @@ class DataCuratorApp(tk.Tk):
             )
 
     def process_file(self, status: str) -> None:
-        """Record the user's decision for the current file."""
+        """Record the user's decision for all selected files."""
 
-        if self.current_file_index < 0:
+        indices = self.file_listbox.curselection()
+        if not indices:
             return
 
-        filename = self.file_list[self.current_file_index]
+        for i in indices:
+            filename = self.file_list[i]
+            core.update_file_status(filename, status)
 
-        state = core.load_state()
-        old_status = state.get(filename, {}).get("status", "new")
-        self.last_action = {
-            "type": "status_change",
-            "filename": filename,
-            "old_status": old_status,
-        }
-
-        core.update_file_status(filename, status)
-        self.next_file()
+        self.last_action = None
+        self.load_files()
 
     def rename_current_file(self) -> None:
-        """Prompt to rename the selected file."""
+        """Prompt to rename the selected file(s)."""
 
-        if self.current_file_index < 0:
+        indices = self.file_listbox.curselection()
+        if not indices:
             return
 
-        old_filename = self.file_list[self.current_file_index]
-        old_path = os.path.join(self.repository_path, old_filename)
-        new_name = simpledialog.askstring(
-            "Rename File", "Enter new name:", initialvalue=old_filename
-        )
-        if new_name and new_name != old_filename:
-            self.last_action = {
-                "type": "rename",
-                "old_path": old_path,
-                "new_name": new_name,
-            }
-            if core.rename_file(old_path, new_name):
-                self.next_file(reload_list=True)
-            else:
-                self.last_action = None
-                messagebox.showerror("Error", f"Could not rename {old_filename}.")
+        for i in indices:
+            old_filename = self.file_list[i]
+            old_path = os.path.join(self.repository_path, old_filename)
+            new_name = simpledialog.askstring(
+                "Rename File",
+                f"Enter new name for {old_filename}:",
+                initialvalue=old_filename,
+            )
+            if new_name and new_name != old_filename:
+                if not core.rename_file(old_path, new_name):
+                    messagebox.showerror("Error", f"Could not rename {old_filename}.")
+
+        self.last_action = None
+        self.load_files()
 
     def delete_current_file(self) -> None:
-        """Delete the selected file after confirmation."""
+        """Delete the selected file(s) after confirmation."""
 
-        if self.current_file_index < 0:
+        selected_indices = self.file_listbox.curselection()
+        if not selected_indices:
             return
 
-        filename = self.file_list[self.current_file_index]
-        file_path = os.path.join(self.repository_path, filename)
+        filenames = [self.file_list[i] for i in selected_indices]
+
         if messagebox.askyesno(
-            "Confirm Delete",
-            f"Are you sure you want to permanently delete\n{filename}?",
+            "Confirm Action",
+            f"Are you sure you want to move {len(filenames)} files to the trash?",
         ):
+            for filename in filenames:
+                file_path = os.path.join(self.repository_path, filename)
+                core.delete_file(file_path)
+
             self.last_action = None
-            if core.delete_file(file_path):
-                self.next_file(reload_list=True)
-            else:
-                messagebox.showerror("Error", f"Could not delete {filename}.")
+            self.load_files()
 
     def undo_last_action(self) -> None:
         """Reverts the last stored action."""
@@ -469,14 +489,16 @@ class DataCuratorApp(tk.Tk):
         self.load_files()
 
     def open_location(self) -> None:
-        """Open the directory of the currently selected file."""
+        """Open the directory of the selected file(s)."""
 
-        if self.current_file_index < 0:
+        indices = self.file_listbox.curselection()
+        if not indices:
             return
 
-        filename = self.file_list[self.current_file_index]
-        file_path = os.path.join(self.repository_path, filename)
-        core.open_file_location(file_path)
+        for i in indices:
+            filename = self.file_list[i]
+            file_path = os.path.join(self.repository_path, filename)
+            core.open_file_location(file_path)
 
     def next_file(self, reload_list: bool = False) -> None:
         """Advance to the next file in the list."""
@@ -484,16 +506,20 @@ class DataCuratorApp(tk.Tk):
         if reload_list:
             self.load_files()
         else:
-            self.file_listbox.delete(self.current_file_index)
-            self.file_list.pop(self.current_file_index)
+            indices = self.file_listbox.curselection()
+            if not indices:
+                return
+
+            for i in reversed(indices):
+                self.file_listbox.delete(i)
+                self.file_list.pop(i)
 
             if not self.file_list:
                 self.preview_canvas.delete("all")
                 messagebox.showinfo("All Done!", "No more files to review.")
                 return
 
-            if self.current_file_index >= len(self.file_list):
-                self.current_file_index = 0
+            self.current_file_index = min(indices[0], len(self.file_list) - 1)
 
             self.file_listbox.selection_clear(0, tk.END)
             self.file_listbox.selection_set(self.current_file_index)
