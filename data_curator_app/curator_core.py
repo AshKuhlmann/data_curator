@@ -21,22 +21,40 @@ def save_state(state):
         json.dump(state, f, indent=4)
 
 
-def scan_directory(path):
-    """Scans a directory and returns a list of files, excluding those already processed."""
+def scan_directory(path, filter_term: str | None = None):
+    """Scans a directory and returns a list of files matching the optional filter."""
     state = load_state()
     all_files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
     processed_files = [
-        f for f, data in state.items() if data.get("status") != "decide_later"
+        f
+        for f, data in state.items()
+        if data.get("status") and data.get("status") != "decide_later"
     ]
     files_to_review = [f for f in all_files if f not in processed_files]
+
+    if filter_term:
+        term = filter_term.lower()
+        filtered: list[str] = []
+        for fname in files_to_review:
+            tags = state.get(fname, {}).get("tags", [])
+            if term in fname.lower() or any(term in t.lower() for t in tags):
+                filtered.append(fname)
+        files_to_review = filtered
+
     return files_to_review
 
 
-def update_file_status(filename, status):
-    """Updates the status of a single file in the state file."""
+def update_file_status(filename, status, tags: list[str] | None = None):
+    """Updates the status and optional tags for a file in the state file."""
     state = load_state()
     if filename not in state:
         state[filename] = {}
+    if "tags" not in state[filename]:
+        state[filename]["tags"] = []
+    if tags:
+        for tag in tags:
+            if tag not in state[filename]["tags"]:
+                state[filename]["tags"].append(tag)
     state[filename]["status"] = status
     state[filename]["last_updated"] = datetime.now().isoformat()
     if status == "keep_90_days":
@@ -45,6 +63,33 @@ def update_file_status(filename, status):
         ).isoformat()
     save_state(state)
     print(f"Updated {filename} to status: {status}")
+
+
+def manage_tags(
+    filename: str,
+    tags_to_add: list[str] | None = None,
+    tags_to_remove: list[str] | None = None,
+) -> list[str]:
+    """Add or remove tags for a given filename and return the updated list."""
+    state = load_state()
+    if filename not in state:
+        state[filename] = {"tags": []}
+
+    if "tags" not in state[filename]:
+        state[filename]["tags"] = []
+
+    if tags_to_add:
+        for tag in tags_to_add:
+            if tag not in state[filename]["tags"]:
+                state[filename]["tags"].append(tag)
+
+    if tags_to_remove:
+        state[filename]["tags"] = [
+            t for t in state[filename]["tags"] if t not in tags_to_remove
+        ]
+
+    save_state(state)
+    return state[filename]["tags"]
 
 
 def rename_file(old_path, new_name):

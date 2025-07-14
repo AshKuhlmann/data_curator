@@ -53,14 +53,21 @@ class DataCuratorApp(tk.Tk):
 
         list_frame = tk.Frame(main_frame)
         list_frame.grid(row=0, column=0, sticky="nswe", padx=(0, 10))
-        list_frame.grid_rowconfigure(1, weight=1)
+        list_frame.grid_rowconfigure(2, weight=1)
 
         tk.Label(
             list_frame, text="Files to Review", font=("Helvetica", 12, "bold")
         ).grid(row=0, column=0, sticky="w")
 
+        self.filter_var = tk.StringVar()
+        filter_entry = tk.Entry(list_frame, textvariable=self.filter_var)
+        filter_entry.grid(row=1, column=0, sticky="we", pady=(5, 5))
+        filter_entry.bind(
+            "<KeyRelease>", lambda e: self.load_files(self.filter_var.get())
+        )
+
         self.file_listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED)
-        self.file_listbox.grid(row=1, column=0, sticky="nswe")
+        self.file_listbox.grid(row=2, column=0, sticky="nswe")
         self.file_listbox.bind("<<ListboxSelect>>", self.on_file_select)
 
         preview_frame = tk.Frame(main_frame)
@@ -73,6 +80,19 @@ class DataCuratorApp(tk.Tk):
 
         self.preview_canvas = tk.Canvas(preview_frame, bg="white", highlightthickness=0)
         self.preview_canvas.grid(row=1, column=0, sticky="nswe")
+
+        tag_frame = tk.Frame(preview_frame)
+        tag_frame.grid(row=2, column=0, sticky="we", pady=(5, 0))
+        tag_frame.grid_columnconfigure(1, weight=1)
+
+        self.tag_entry = tk.Entry(tag_frame)
+        self.tag_entry.grid(row=0, column=0, sticky="we")
+        tk.Button(tag_frame, text="Add Tag", command=self.add_tag).grid(
+            row=0, column=1, padx=5
+        )
+
+        self.tag_label = tk.Label(preview_frame, text="Tags: ")
+        self.tag_label.grid(row=3, column=0, sticky="w")
 
         action_frame = tk.Frame(self, padx=10, pady=10)
         action_frame.pack(fill=tk.X)
@@ -212,15 +232,15 @@ class DataCuratorApp(tk.Tk):
             core.TARGET_REPOSITORY = path
             self.repo_label.config(text=f"Current: {self.repository_path}", fg="black")
             self.handle_expired_files()
-            self.load_files()
+            self.load_files(self.filter_var.get())
 
-    def load_files(self) -> None:
+    def load_files(self, filter_term: str | None = None) -> None:
         """Load files from the currently selected repository."""
 
         if not self.repository_path:
             return
 
-        self.file_list = core.scan_directory(self.repository_path)
+        self.file_list = core.scan_directory(self.repository_path, filter_term)
         self.file_listbox.delete(0, tk.END)
         for filename in self.file_list:
             self.file_listbox.insert(tk.END, filename)
@@ -279,6 +299,9 @@ class DataCuratorApp(tk.Tk):
 
         filename = self.file_list[self.current_file_index]
         file_path = os.path.join(self.repository_path, filename)
+
+        tags = core.load_state().get(filename, {}).get("tags", [])
+        self.tag_label.config(text="Tags: " + ", ".join(tags))
 
         try:
             # --- MODIFY THIS WHOLE LOGIC BLOCK ---
@@ -407,7 +430,7 @@ class DataCuratorApp(tk.Tk):
             core.update_file_status(filename, status)
 
         self.last_action = None
-        self.load_files()
+        self.load_files(self.filter_var.get())
 
     def rename_current_file(self) -> None:
         """Prompt to rename the selected file(s)."""
@@ -429,7 +452,7 @@ class DataCuratorApp(tk.Tk):
                     messagebox.showerror("Error", f"Could not rename {old_filename}.")
 
         self.last_action = None
-        self.load_files()
+        self.load_files(self.filter_var.get())
 
     def delete_current_file(self) -> None:
         """Delete the selected file(s) after confirmation."""
@@ -449,7 +472,7 @@ class DataCuratorApp(tk.Tk):
                 core.delete_file(file_path)
 
             self.last_action = None
-            self.load_files()
+            self.load_files(self.filter_var.get())
 
     def undo_last_action(self) -> None:
         """Reverts the last stored action."""
@@ -486,7 +509,7 @@ class DataCuratorApp(tk.Tk):
             messagebox.showerror("Undo Error", f"Could not perform undo: {e}")
 
         self.last_action = None
-        self.load_files()
+        self.load_files(self.filter_var.get())
 
     def open_location(self) -> None:
         """Open the directory of the selected file(s)."""
@@ -500,11 +523,22 @@ class DataCuratorApp(tk.Tk):
             file_path = os.path.join(self.repository_path, filename)
             core.open_file_location(file_path)
 
+    def add_tag(self) -> None:
+        """Add a tag to the currently selected file."""
+        tag = self.tag_entry.get().strip()
+        if not tag or self.current_file_index < 0 or not self.file_list:
+            return
+
+        filename = self.file_list[self.current_file_index]
+        tags = core.manage_tags(filename, tags_to_add=[tag])
+        self.tag_label.config(text="Tags: " + ", ".join(tags))
+        self.tag_entry.delete(0, tk.END)
+
     def next_file(self, reload_list: bool = False) -> None:
         """Advance to the next file in the list."""
 
         if reload_list:
-            self.load_files()
+            self.load_files(self.filter_var.get())
         else:
             indices = self.file_listbox.curselection()
             if not indices:
