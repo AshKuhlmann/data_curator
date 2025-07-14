@@ -39,6 +39,34 @@ def test_scan_directory_filters_processed(tmp_path, monkeypatch):
     assert sorted(files) == ["b.txt", "c.txt"]
 
 
+def test_manage_tags_add_remove(tmp_path, monkeypatch):
+    state_file = tmp_path / "state.json"
+    monkeypatch.setattr(core, "STATE_FILE", str(state_file))
+
+    tags = core.manage_tags("file.txt", tags_to_add=["one", "two"])
+    assert sorted(tags) == ["one", "two"]
+
+    tags = core.manage_tags("file.txt", tags_to_add=["two", "three"])
+    assert sorted(tags) == ["one", "three", "two"]
+
+    tags = core.manage_tags("file.txt", tags_to_remove=["one"])
+    assert sorted(tags) == ["three", "two"]
+
+
+def test_scan_directory_filter_by_tag(tmp_path, monkeypatch):
+    state_file = tmp_path / "state.json"
+    monkeypatch.setattr(core, "STATE_FILE", str(state_file))
+
+    dir_path = tmp_path / "repo"
+    dir_path.mkdir()
+    for name in ["a.txt", "b.txt", "c.txt"]:
+        (dir_path / name).write_text("data")
+
+    core.manage_tags("b.txt", tags_to_add=["tag1"])
+    result = core.scan_directory(dir_path, "tag1")
+    assert result == ["b.txt"]
+
+
 def test_update_file_status_and_expiry(tmp_path, monkeypatch):
     state_file = tmp_path / "state.json"
     monkeypatch.setattr(core, "STATE_FILE", str(state_file))
