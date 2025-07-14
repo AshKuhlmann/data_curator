@@ -159,9 +159,9 @@ class DataCuratorApp(tk.Tk):
             self.open_location()
         elif key == "d":
             self.delete_current_file()
-        elif key == "right" or key == "space":
+        elif key == "right" or key == "space":  # Right arrow or spacebar to skip
             self.next_file()
-        elif (int(event.state) & 4) and key == "z":
+        elif (int(event.state) & 4) and key == "z":  # Control + Z
             self.undo_last_action()
 
     def handle_expired_files(self) -> None:
