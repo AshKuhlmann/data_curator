@@ -14,6 +14,7 @@ from PIL import Image, ImageTk  # type: ignore[import]
 
 # Adjust the import to reflect the project structure
 from data_curator_app import curator_core as core
+from data_curator_app import rules_engine
 
 
 class DataCuratorApp(tk.Tk):
@@ -184,6 +185,50 @@ class DataCuratorApp(tk.Tk):
         elif (int(event.state) & 4) and key == "z":  # Control + Z
             self.undo_last_action()
 
+    def run_rules_engine(self) -> None:
+        """Apply automatic rules to files in the repository."""
+        if not self.repository_path:
+            return
+
+        rules = rules_engine.load_rules()
+        if not rules:
+            return
+
+        suggestions: list[tuple[str, str, dict[str, Any]]] = []
+        for name in os.listdir(self.repository_path):
+            path = os.path.join(self.repository_path, name)
+            if not os.path.isfile(path):
+                continue
+            result = rules_engine.evaluate_file(name, path, rules)
+            if result:
+                suggestions.append((name, path, result))
+
+        if not suggestions:
+            return
+
+        counts: dict[str, int] = {}
+        for _, _, res in suggestions:
+            rule_name = res.get("name", res.get("action", ""))
+            counts[rule_name] = counts.get(rule_name, 0) + 1
+
+        summary = "The rules engine suggests the following actions:\n"
+        for rule_name, count in counts.items():
+            summary += f"- {rule_name}: {count} file(s)\n"
+        summary += "\nDo you want to proceed?"
+
+        if not messagebox.askyesno("Rules Engine", summary):
+            return
+
+        for filename, filepath, res in suggestions:
+            action = res.get("action")
+            if action == "trash":
+                core.delete_file(filepath)
+            elif action == "add_tag":
+                tag = res.get("action_value")
+                if tag:
+                    core.manage_tags(filename, tags_to_add=[tag])
+                core.update_file_status(filename, "auto_tagged")
+
     def handle_expired_files(self) -> None:
         """Check for files whose temporary keep period has ended."""
         if not self.repository_path:
@@ -231,6 +276,7 @@ class DataCuratorApp(tk.Tk):
             self.repository_path = path
             core.TARGET_REPOSITORY = path
             self.repo_label.config(text=f"Current: {self.repository_path}", fg="black")
+            self.run_rules_engine()
             self.handle_expired_files()
             self.load_files(self.filter_var.get())
 
