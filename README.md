@@ -1,4 +1,27 @@
-Data CuratorData Curator is a smart, visual tool designed to help you organize, declutter, and take control of your digital files. Stop letting downloads, documents, and project folders descend into chaos. Review, decide, and act with an intuitive interface.A preview of the Data Curator interface in action.The ProblemWe all have them: the "Downloads" folder filled with files from months ago, the "Desktop" littered with temporary screenshots, the "Projects" directory with old assets. Sifting through this digital clutter is tedious. Data Curator turns this chore into a quick and even satisfying process.Key FeaturesVisual File Curation: Select a folder (your "repository") and Data Curator presents you with one file at a time, so you can focus and make decisions without being overwhelmed.Intelligent Scanning: The app cleverly remembers which files you've already curated, so you only review new or previously postponed items.Powerful Actions: For each file, you can:Keep (Forever): Mark the file as important and permanent.Keep (Temporary): Keep the file for a configurable period (e.g., 90 days). The app will notify you when it expires!Rename: Quickly give the file a more meaningful name.Open Location: Instantly open the file's containing folder in your system's file explorer.Decide Later: Skip the file for now. It will be presented to you again in a future session.Delete: Securely and permanently delete the file after a confirmation.Rich File Previews: No need to open every file to know what it is. Data Curator features a large preview pane with support for:Images: png, jpg, gif, bmp, etc.Text Files: txt, md, log, etc.PDF Documents: View PDFs directly within the app.Tabular Data: Renders .csv files in a clean, readable table.Source Code: Displays code with syntax highlighting for dozens of languages.Undo Your Last Action: Accidentally deleted a file? No problem. A simple undo feature lets you reverse your last decision.Expiry Notifications: On startup, the app checks for any temporarily kept files whose time is up and asks you what you'd like to do with them.Persistent State: All your decisions are saved locally in a simple json file, giving you a complete record of your curation activities.Cross-Platform: Built with Python and its standard libraries, Data Curator runs on Windows, macOS, and Linux.InstallationYou can get Data Curator up and running in two ways:1. Using the Executable (Recommended for most users)Go to the Releases page of this repository.Download the appropriate executable for your operating system (.exe for Windows, .app for macOS, or the binary for Linux).No installation is needed. Just run the downloaded file.2. Running from Source (For developers)If you want to run the latest development version or contribute to the project:# 1. Clone the repository
+# Data Curator
+
+Data Curator is a visual tool for cleaning up your folders one file at a time. It remembers what you have already reviewed and supports common file types such as images, text, PDF documents and more. Files can be kept permanently, kept temporarily with an expiry date, renamed, opened in your file browser, skipped for later or deleted. The state of your decisions is saved locally so you can resume where you left off.
+
+## Key Features
+
+- **Visual file curation**: Review items individually with a large preview pane.
+- **Intelligent scanning**: Previously curated files are skipped so you only see new or postponed items.
+- **Rich previews**: Supports images, text files, PDFs, CSV tables and syntax highlighted code.
+- **Powerful actions**: Keep forever, keep temporarily, rename, open location, decide later or delete.
+- **Undo support**: Reverse your last action if you make a mistake.
+- **Expiry notifications**: The app notifies you when temporary files expire.
+- **Cross platform**: Works on Windows, macOS and Linux.
+
+## Installation
+
+### Using a released executable
+
+Visit the project Releases page and download the executable for your operating system. No additional installation is required—just run the downloaded file.
+
+### Running from source
+
+```bash
+# 1. Clone the repository
 git clone https://github.com/your-username/data-curator.git
 cd data-curator
 
@@ -12,27 +35,46 @@ pip install -r requirements.txt
 
 # 4. Run the application
 python data_curator_app.py
-How to UseLaunch Data Curator.Click "Select Repository" and choose a folder you want to clean up.The first un-curated file will be loaded into the list and its preview will be shown.Use the action buttons at the bottom of the window to process the file.The app will automatically move to the next file. Continue until the review list is empty.Close the app at any time. Your progress is always saved.ContributingContributions are welcome! Whether it's a bug report, a feature request, or a pull request, your input is valued. Please feel free to open an issue to discuss your ideas.If you'd like to contribute code:Fork the repository.Create a new branch for your feature (git checkout -b feature/AmazingFeature).Commit your changes (git commit -m 'Add some AmazingFeature').Push to the branch (git push origin feature/AmazingFeature).Open a Pull Request.LicenseThis project is licensed under the GNU General Public License v3.0. See the LICENSE file for more details. This means you are free to use, study, share, and modify the software.
+```
+
+## How to Use
+
+1. Launch **Data Curator**.
+2. Click **Select Repository** and choose the folder you want to tidy.
+3. Use the action buttons at the bottom of the window to process each file.
+4. Continue until the review list is empty. Your progress is saved automatically.
+
+## Contributing
+
+Contributions are welcome! Please open an issue to discuss your ideas. If you would like to submit code:
+
+1. Fork the repository and create a branch for your feature.
+2. Commit your changes and push the branch.
+3. Open a pull request.
+
+## License
+
+This project is licensed under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
 
 ## Building an Executable
 
-1. **Add PyInstaller**
-   Add PyInstaller as a development dependency so it isn't included in the final package:
+To generate a standalone executable with PyInstaller:
 
-   ```bash
-   poetry add pyinstaller --group dev
-   ```
+1. Add PyInstaller as a development dependency:
 
-2. **Run the Packaging Command**
-   Run this from the project root to bundle the app:
+```bash
+poetry add pyinstaller --group dev
+```
 
-   ```bash
-   poetry run pyinstaller --onefile --windowed --name DataCurator data_curator_app/main.py
-   ```
+2. Run the packaging command from the project root:
 
-   - `--onefile`: Creates a single executable file.
-   - `--windowed`: Prevents a black console window from appearing.
-   - `--name DataCurator`: Sets the name of your final executable.
-   - `data_curator_app/main.py`: Entry point of the application.
+```bash
+poetry run pyinstaller --onefile --windowed --name DataCurator data_curator_app/main.py
+```
 
-After the command finishes, the executable will be available in the `dist` folder. You can now share that single file with others!
+- `--onefile` creates a single executable file.
+- `--windowed` prevents a console window from appearing.
+- `--name DataCurator` sets the name of the final executable.
+- `data_curator_app/main.py` is the entry point of the application.
+
+The resulting file will be located in the `dist` folder and can be shared with others.
