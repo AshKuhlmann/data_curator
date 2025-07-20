@@ -22,19 +22,15 @@ Visit the project Releases page and download the executable for your operating s
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/data-curator.git
+git clone https://github.com/ashkuhlmann/data-curator.git
 cd data-curator
 
-# 2. Create and activate a virtual environment
-python -m venv venv
-# On Windows: venv\Scripts\activate
-# On macOS/Linux: source venv/bin/activate
+# 2. Install dependencies with Poetry
+pip install poetry
+poetry install
 
-# 3. Install the required dependencies
-pip install -r requirements.txt
-
-# 4. Run the application
-python data_curator_app.py
+# 3. Run the application
+poetry run python data_curator_app/main.py
 ```
 
 ## How to Use
