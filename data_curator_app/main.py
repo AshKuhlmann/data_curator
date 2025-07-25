@@ -1,442 +1,469 @@
-"""GUI entry point for the Data Curator application."""
-
-from __future__ import annotations
-
-import csv
-import io
 import os
+import csv
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog
-from tkinter import ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any
 
-from PIL import Image, ImageTk  # type: ignore[import]
-from pygments import highlight  # type: ignore[import]
-from pygments.formatters import ImageFormatter  # type: ignore[import]
-from pygments.lexers import TextLexer, guess_lexer_for_filename  # type: ignore[import]
-import fitz  # type: ignore[import]
+# Third-party libraries for enhanced previews
+from PIL import Image, ImageTk  # For image previews
+import fitz  # PyMuPDF for PDF previews
+from pygments import lex
+from pygments.lexers import get_lexer_by_name, TextLexer
+from pygments.styles import get_style_by_name
 
+# Project-specific imports
 from data_curator_app import curator_core as core
 from data_curator_app import rules_engine
 
 
 class DataCuratorApp(tk.Tk):
-    """Graphical interface for reviewing and managing files."""
+    """
+    A polished graphical interface for reviewing, tagging, and managing files
+    in a repository.
+    """
 
     def __init__(self) -> None:
+        """Initializes the main application window and its components."""
         super().__init__()
+
+        # --- Basic Window Setup ---
         self.title("Data Curator")
-        self.geometry("1000x700")
+        self.geometry("1200x800")
+        self.minsize(800, 600)  # Set a minimum size for the window
 
-        style = ttk.Style(self)
-        style.theme_use("clam")
-        style.configure("Accent.TButton", foreground="white", background="#4CAF50")
-        style.map("Accent.TButton", background=[("active", "#45A049")])
+        # --- Style Configuration (for a modern look) ---
+        self.style = ttk.Style(self)
+        self.style.theme_use("clam")  # A clean, modern theme
+        self.configure_styles()
 
+        # --- Application State ---
         self.repository_path = ""
         self.file_list: list[str] = []
         self.current_file_index = -1
+        self.last_action: dict[str, Any] | None = None
+        self.photo_image: ImageTk.PhotoImage | None = (
+            None  # Keep a reference to the image
+        )
 
-        self.status_var = tk.StringVar(value="Ready")
-        self._status_after: str | None = None
+        # --- UI Construction ---
         self.create_widgets()
-        self.bind("<KeyPress>", self.handle_keypress)
+        self.bind_keyboard_shortcuts()
 
-    # ------------------------------------------------------------------
-    # UI helpers
+    def configure_styles(self) -> None:
+        """Configures custom styles for ttk widgets."""
+        self.style.configure("TButton", font=("Helvetica", 10), padding=5)
+        self.style.configure(
+            "Accent.TButton",
+            font=("Helvetica", 10, "bold"),
+            foreground="white",
+            background="#007aff",  # A nice blue for the primary action
+        )
+        self.style.map(
+            "Accent.TButton",
+            background=[("active", "#005fcc")],  # Darker blue on click
+        )
+        self.style.configure("TLabel", font=("Helvetica", 11))
+        self.style.configure("Header.TLabel", font=("Helvetica", 14, "bold"))
+        self.style.configure("Status.TLabel", font=("Helvetica", 10))
+        self.style.configure("Treeview", rowheight=25, font=("Helvetica", 11))
+        self.style.configure("Treeview.Heading", font=("Helvetica", 11, "bold"))
+
     def create_widgets(self) -> None:
-        """Build all interface widgets."""
+        """Creates and lays out all the widgets for the application."""
+        # Use a main frame for better padding control
+        main_frame = ttk.Frame(self, padding="10 10 10 10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
 
-        top = ttk.Frame(self, padding=10)
-        top.pack(fill=tk.X)
-        ttk.Button(top, text="Select Repository", command=self.select_repository).pack(
-            side=tk.LEFT
+        # --- Top Section: Repository Selection ---
+        top_frame = ttk.Frame(main_frame)
+        top_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.repo_button = ttk.Button(
+            top_frame, text="Select Repository", command=self.select_repository
         )
+        self.repo_button.pack(side=tk.LEFT, padx=(0, 10))
         self.repo_label = ttk.Label(
-            top, text="No repository selected.", foreground="gray"
+            top_frame, text="No repository selected.", style="Status.TLabel"
         )
-        self.repo_label.pack(side=tk.LEFT, padx=10)
+        self.repo_label.pack(side=tk.LEFT, anchor="w")
 
-        # Paned layout for file list and preview
-        paned = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
-        paned.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # --- Main Content: Resizable Panes ---
+        paned_window = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
+        paned_window.pack(fill=tk.BOTH, expand=True)
 
-        list_frame = ttk.Frame(paned)
-        paned.add(list_frame, weight=1)
-        preview_frame = ttk.Frame(paned)
-        paned.add(preview_frame, weight=3)
+        # --- Left Pane: File List ---
+        list_frame = ttk.Frame(paned_window, padding=5)
+        ttk.Label(list_frame, text="Files to Review", style="Header.TLabel").pack(
+            anchor="w", pady=(0, 5)
+        )
 
-        ttk.Label(
-            list_frame, text="Files to Review", font=("Helvetica", 12, "bold")
-        ).pack(anchor="w")
         self.filter_var = tk.StringVar()
-        entry = ttk.Entry(list_frame, textvariable=self.filter_var)
-        entry.pack(fill=tk.X, pady=5)
-        entry.bind("<KeyRelease>", lambda _: self.load_files(self.filter_var.get()))
+        filter_entry = ttk.Entry(list_frame, textvariable=self.filter_var)
+        filter_entry.pack(fill=tk.X, pady=(0, 5))
+        filter_entry.bind(
+            "<KeyRelease>", lambda e: self.load_files(self.filter_var.get())
+        )
 
-        self.file_listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED)
+        self.file_listbox = tk.Listbox(
+            list_frame,
+            selectmode=tk.EXTENDED,
+            font=("Helvetica", 12),
+            bd=0,
+            highlightthickness=0,
+        )
         self.file_listbox.pack(fill=tk.BOTH, expand=True)
         self.file_listbox.bind("<<ListboxSelect>>", self.on_file_select)
+        paned_window.add(list_frame, weight=1)  # Add to pane
 
-        ttk.Label(
-            preview_frame, text="File Preview", font=("Helvetica", 12, "bold")
-        ).pack(anchor="w")
+        # --- Right Pane: File Preview ---
+        preview_frame = ttk.Frame(paned_window, padding=5)
+        ttk.Label(preview_frame, text="File Preview", style="Header.TLabel").pack(
+            anchor="w", pady=(0, 5)
+        )
+
         self.preview_canvas = tk.Canvas(preview_frame, bg="white", highlightthickness=0)
         self.preview_canvas.pack(fill=tk.BOTH, expand=True)
 
+        # Tagging Section
         tag_frame = ttk.Frame(preview_frame)
-        tag_frame.pack(fill=tk.X, pady=5)
+        tag_frame.pack(fill=tk.X, pady=(10, 0))
         self.tag_entry = ttk.Entry(tag_frame)
-        self.tag_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(tag_frame, text="Add Tag", command=self.add_tag).pack(
-            side=tk.LEFT, padx=5
-        )
-        self.tag_label = ttk.Label(preview_frame, text="Tags: ")
-        self.tag_label.pack(anchor="w")
+        self.tag_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        ttk.Button(tag_frame, text="Add Tag", command=self.add_tag).pack(side=tk.LEFT)
+        self.tag_label = ttk.Label(preview_frame, text="Tags: ", wraplength=400)
+        self.tag_label.pack(anchor="w", pady=(5, 0))
+        paned_window.add(preview_frame, weight=3)  # Add to pane
 
-        action = ttk.Frame(self, padding=10)
-        action.pack(fill=tk.X)
+        # --- Bottom Section: Action Buttons ---
+        action_frame = ttk.Frame(main_frame)
+        action_frame.pack(fill=tk.X, pady=(10, 0))
+
         ttk.Button(
-            action,
+            action_frame,
             text="Keep (K)",
             style="Accent.TButton",
             command=lambda: self.process_file("keep_forever"),
-        ).pack(side=tk.LEFT, padx=5)
+        ).pack(side=tk.LEFT, padx=2)
         ttk.Button(
-            action,
+            action_frame,
             text="Temp Keep (T)",
             command=lambda: self.process_file("keep_90_days"),
-        ).pack(side=tk.LEFT, padx=5)
-        ttk.Button(action, text="Rename (R)", command=self.rename_current_file).pack(
-            side=tk.LEFT, padx=5
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Button(
+            action_frame, text="Rename (R)", command=self.rename_current_file
+        ).pack(side=tk.LEFT, padx=2)
+        ttk.Button(action_frame, text="Open (O)", command=self.open_location).pack(
+            side=tk.LEFT, padx=2
         )
-        ttk.Button(action, text="Open (O)", command=self.open_location).pack(
-            side=tk.LEFT, padx=5
-        )
-        ttk.Button(action, text="Next (→)", command=self.next_file).pack(
-            side=tk.LEFT, padx=5
-        )
-        ttk.Button(action, text="DELETE (D)", command=self.delete_current_file).pack(
-            side=tk.RIGHT, padx=5
-        )
-        ttk.Button(action, text="Undo (Ctrl+Z)", command=self.undo_last_action).pack(
-            side=tk.RIGHT, padx=5
+        ttk.Button(action_frame, text="Next (→)", command=self.next_file).pack(
+            side=tk.LEFT, padx=2
         )
 
-        status = ttk.Label(
-            self, textvariable=self.status_var, relief=tk.SUNKEN, anchor="w"
+        ttk.Button(
+            action_frame, text="DELETE (D)", command=self.delete_current_file
+        ).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(
+            action_frame, text="Undo (Ctrl+Z)", command=self.undo_last_action
+        ).pack(side=tk.RIGHT, padx=2)
+
+        # --- Status Bar ---
+        self.status_bar = ttk.Label(
+            self,
+            text="Ready",
+            relief=tk.SUNKEN,
+            anchor=tk.W,
+            padding=5,
+            style="Status.TLabel",
         )
-        status.pack(fill=tk.X, side=tk.BOTTOM)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
-    # ------------------------------------------------------------------
-    def set_status(self, msg: str, timeout: int = 3000) -> None:
-        """Display a temporary status message."""
+    def bind_keyboard_shortcuts(self) -> None:
+        """Binds keyboard shortcuts to application actions."""
+        self.bind("<KeyPress>", self.handle_keypress)
+        self.bind("<Control-z>", lambda e: self.undo_last_action())
+        self.bind("<Right>", lambda e: self.next_file())
+        self.bind("<Left>", lambda e: self.prev_file())
 
-        self.status_var.set(msg)
-        if self._status_after is not None:
-            self.after_cancel(self._status_after)
-        self._status_after = self.after(timeout, lambda: self.status_var.set("Ready"))
-
-    # ------------------------------------------------------------------
-    # Event handlers and actions
-    def handle_keypress(self, event: tk.Event) -> None:
-        if self.focus_get() is not self:
-            return
-        key = event.keysym.lower()
-        if key == "k":
-            self.process_file("keep_forever")
-        elif key == "t":
-            self.process_file("keep_90_days")
-        elif key == "r":
-            self.rename_current_file()
-        elif key == "o":
-            self.open_location()
-        elif key == "d":
-            self.delete_current_file()
-        elif key in {"right", "space"}:
-            self.next_file()
-        elif (int(event.state) & 4) and key == "z":
-            self.undo_last_action()
-
-    def run_rules_engine(self) -> None:
-        if not self.repository_path:
-            return
-        rules = rules_engine.load_rules()
-        if not rules:
-            return
-        suggestions: list[tuple[str, str, dict[str, Any]]] = []
-        for name in os.listdir(self.repository_path):
-            path = os.path.join(self.repository_path, name)
-            if not os.path.isfile(path):
-                continue
-            result = rules_engine.evaluate_file(name, path, rules)
-            if result:
-                suggestions.append((name, path, result))
-        if not suggestions:
-            return
-        counts: dict[str, int] = {}
-        for _, _, res in suggestions:
-            rname = res.get("name", res.get("action", ""))
-            counts[rname] = counts.get(rname, 0) + 1
-        summary = "The rules engine suggests the following actions:\n"
-        for rname, cnt in counts.items():
-            summary += f"- {rname}: {cnt} file(s)\n"
-        summary += "\nDo you want to proceed?"
-        if not messagebox.askyesno("Rules Engine", summary):
-            return
-        for filename, filepath, res in suggestions:
-            action = res.get("action")
-            if action == "trash":
-                core.delete_file(filepath)
-            elif action == "add_tag":
-                tag = res.get("action_value")
-                if tag:
-                    core.manage_tags(filename, tags_to_add=[tag])
-                core.update_file_status(filename, "auto_tagged")
-
-    def handle_expired_files(self) -> None:
-        if not self.repository_path:
-            return
-        expired = core.check_for_expired_files()
-        if not expired:
-            return
-        messagebox.showinfo(
-            "Expired Files Found",
-            f"Found {len(expired)} file(s) whose temporary keep period has ended. Please review them.",
-        )
-        for filename in expired:
-            path = os.path.join(self.repository_path, filename)
-            if not os.path.exists(path):
-                core.update_file_status(filename, "missing")
-                continue
-            action = messagebox.askquestion(
-                "Expired File: " + filename,
-                (
-                    f"The temporary keep period for '{filename}' has expired.\n\n"
-                    "Do you want to DELETE it? (Yes=Delete, No=Keep Forever)"
-                ),
-                icon="warning",
-                type=messagebox.YESNOCANCEL,
-            )
-            if action == messagebox.YES:
-                core.delete_file(path)
-            elif action == messagebox.NO:
-                core.update_file_status(filename, "keep_forever")
+    def update_status(self, message: str, duration: int = 3000) -> None:
+        """Updates the status bar with a message for a set duration."""
+        self.status_bar.config(text=message)
+        if duration > 0:
+            self.after(duration, lambda: self.status_bar.config(text="Ready"))
 
     def select_repository(self) -> None:
+        """Opens a dialog to select a repository and loads its files."""
         path = filedialog.askdirectory()
         if path:
             self.repository_path = path
-            core.TARGET_REPOSITORY = path
-            self.repo_label.config(
-                text=f"Current: {self.repository_path}", foreground="black"
-            )
-            self.run_rules_engine()
-            self.handle_expired_files()
-            self.load_files(self.filter_var.get())
+            self.repo_label.config(text=f"Current: {self.repository_path}")
+            self.update_status(f"Repository loaded: {os.path.basename(path)}")
+            self.load_files()
 
-    # ------------------------------------------------------------------
-    # File list & preview
-    def load_files(self, filter_term: str | None = None) -> None:
+    def load_files(self, filter_text: str = "") -> None:
+        """Loads and filters files from the repository."""
         if not self.repository_path:
             return
-        self.file_list = core.scan_directory(self.repository_path, filter_term)
+        state = core.load_state()
+        all_files = os.listdir(self.repository_path)
+
+        # Filter out files that have already been processed
+        self.file_list = [
+            f for f in all_files if f not in state and not f.startswith(".")
+        ]
+
+        # Apply user's filter text
+        if filter_text:
+            self.file_list = [
+                f for f in self.file_list if filter_text.lower() in f.lower()
+            ]
+
         self.file_listbox.delete(0, tk.END)
-        for fname in self.file_list:
-            self.file_listbox.insert(tk.END, fname)
+        for filename in self.file_list:
+            self.file_listbox.insert(tk.END, filename)
+
         if self.file_list:
-            self.current_file_index = 0
             self.file_listbox.selection_set(0)
-            self.show_preview()
-        else:
-            messagebox.showinfo("All Done!", "No files to review in this repository.")
+            self.on_file_select(None)
 
-    def on_file_select(self, _event: tk.Event) -> None:
-        selection = self.file_listbox.curselection()
-        self.preview_canvas.delete("all")
-        for w in self.preview_canvas.winfo_children():
-            w.destroy()
-        if not selection:
-            return
-        if len(selection) == 1:
-            self.current_file_index = selection[0]
+    def on_file_select(self, event: tk.Event | None) -> None:
+        """Handles the event when a file is selected in the listbox."""
+        selections = self.file_listbox.curselection()
+        if selections:
+            self.current_file_index = selections[0]
             self.show_preview()
-        else:
-            total = 0
-            for i in selection:
-                try:
-                    total += os.path.getsize(
-                        os.path.join(self.repository_path, self.file_list[i])
-                    )
-                except OSError:
-                    pass
-            info = f"{len(selection)} files selected\n\nTotal size: {total / (1024*1024):.2f} MB"
-            self.preview_canvas.create_text(
-                20, 20, anchor=tk.NW, text=info, font=("Helvetica", 14)
-            )
-
-    def _render_code_image(self, path: str) -> Image.Image:
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read(5000)
-        try:
-            lexer = guess_lexer_for_filename(path, content)
-        except Exception:
-            lexer = TextLexer()
-        formatter = ImageFormatter(
-            style="solarized-light", font_name="DejaVu Sans Mono"
-        )
-        buf = io.BytesIO()
-        highlight(content, lexer, formatter, outfile=buf)
-        buf.seek(0)
-        return Image.open(buf)
 
     def show_preview(self) -> None:
+        """Displays a rich preview of the currently selected file."""
         self.preview_canvas.delete("all")
-        for w in self.preview_canvas.winfo_children():
-            w.destroy()
-        if self.current_file_index < 0 or self.current_file_index >= len(
-            self.file_list
-        ):
+        for widget in self.preview_canvas.winfo_children():
+            widget.destroy()
+
+        if not (0 <= self.current_file_index < len(self.file_list)):
             return
+
         filename = self.file_list[self.current_file_index]
-        path = os.path.join(self.repository_path, filename)
+        file_path = os.path.join(self.repository_path, filename)
         tags = core.load_state().get(filename, {}).get("tags", [])
         self.tag_label.config(text="Tags: " + ", ".join(tags))
+
         try:
-            img: Image.Image
-            if filename.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp")):
-                img = Image.open(path)
-            elif filename.lower().endswith(".pdf"):
-                doc = fitz.open(path)
+            ext = os.path.splitext(filename)[1].lower()
+            canvas_w = self.preview_canvas.winfo_width()
+            canvas_h = self.preview_canvas.winfo_height()
+
+            # --- Image Preview ---
+            if ext in [".png", ".jpg", ".jpeg", ".gif", ".bmp"]:
+                img = Image.open(file_path)
+                img.thumbnail((canvas_w - 20, canvas_h - 20), Image.Resampling.LANCZOS)
+                self.photo_image = ImageTk.PhotoImage(img)
+                self.preview_canvas.create_image(
+                    canvas_w / 2, canvas_h / 2, anchor=tk.CENTER, image=self.photo_image
+                )
+
+            # --- PDF Preview ---
+            elif ext == ".pdf":
+                doc = fitz.open(file_path)
                 page = doc.load_page(0)
                 pix = page.get_pixmap()
-                img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                img.thumbnail((canvas_w - 20, canvas_h - 20), Image.Resampling.LANCZOS)
+                self.photo_image = ImageTk.PhotoImage(img)
+                self.preview_canvas.create_image(
+                    canvas_w / 2, canvas_h / 2, anchor=tk.CENTER, image=self.photo_image
+                )
                 doc.close()
-            elif filename.lower().endswith(".csv"):
-                frame = ttk.Frame(self.preview_canvas)
-                self.preview_canvas.create_window(0, 0, window=frame, anchor="nw")
-                tree = ttk.Treeview(frame, show="headings")
-                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+
+            # --- CSV Preview ---
+            elif ext == ".csv":
+                csv_frame = ttk.Frame(self.preview_canvas)
+                tree = ttk.Treeview(csv_frame, show="headings")
+                vsb = ttk.Scrollbar(csv_frame, orient="vertical", command=tree.yview)
+                hsb = ttk.Scrollbar(csv_frame, orient="horizontal", command=tree.xview)
+                tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     reader = csv.reader(f)
                     header = next(reader, None)
                     if header:
                         tree["columns"] = header
                         for col in header:
                             tree.heading(col, text=col)
-                            tree.column(col, width=100)
-                    for i, row in enumerate(reader):
-                        if i < 100 and (not header or len(row) == len(header)):
-                            tree.insert("", "end", values=row)
-                vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-                hsb = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
-                tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+                            tree.column(col, width=120, anchor="w")
+                        for i, row in enumerate(reader):
+                            if i >= 100:
+                                break  # Limit rows for performance
+                            if len(row) == len(header):
+                                tree.insert("", "end", values=row)
+
                 vsb.pack(side="right", fill="y")
                 hsb.pack(side="bottom", fill="x")
                 tree.pack(side="left", fill="both", expand=True)
-                return
+                self.preview_canvas.create_window(
+                    0, 0, window=csv_frame, anchor="nw", width=canvas_w, height=canvas_h
+                )
+
+            # --- Text/Code Preview with Syntax Highlighting ---
             else:
-                img = self._render_code_image(path)
-            canvas_w = self.preview_canvas.winfo_width()
-            canvas_h = self.preview_canvas.winfo_height()
-            if canvas_w < 2 or canvas_h < 2:
-                self.after(50, self.show_preview)
-                return
-            img.thumbnail((canvas_w - 20, canvas_h - 20), Image.Resampling.LANCZOS)
-            self.photo_image = ImageTk.PhotoImage(img)
-            self.preview_canvas.create_image(
-                canvas_w / 2, canvas_h / 2, image=self.photo_image
-            )
-        except Exception as e:  # pylint: disable=broad-except
+                text_widget = tk.Text(
+                    self.preview_canvas,
+                    wrap=tk.WORD,
+                    font=("Courier New", 11),
+                    relief="flat",
+                    borderwidth=0,
+                    highlightthickness=0,
+                    padx=10,
+                    pady=10,
+                )
+                text_widget.pack(fill="both", expand=True)
+
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read(1024 * 100)  # Read up to 100KB
+
+                try:
+                    lexer = get_lexer_by_name(
+                        os.path.splitext(filename)[1][1:], stripall=True
+                    )
+                except Exception:
+                    lexer = TextLexer()
+
+                style = get_style_by_name("solarized-light")
+                text_widget.config(background=style.background_color)
+
+                for token, text in lex(content, lexer):
+                    tag_name = str(token)
+                    color = style.style_for_token(token)["color"]
+                    if color:
+                        text_widget.tag_configure(tag_name, foreground=f"#{color}")
+                    text_widget.insert("end", text, (tag_name,))
+
+                text_widget.config(state=tk.DISABLED)
+
+        except Exception as e:
+            error_msg = f"Cannot preview file: {filename}\n\nError: {e}"
             self.preview_canvas.create_text(
-                10,
-                10,
-                anchor=tk.NW,
-                text=f"Cannot preview file.\n\nError: {e}",
-                font=("Helvetica", 10),
+                10, 10, anchor=tk.NW, text=error_msg, fill="red", font=("Helvetica", 12)
             )
 
-    # ------------------------------------------------------------------
-    # File operations
     def process_file(self, status: str) -> None:
+        """Records the user's decision for all selected files."""
         indices = self.file_listbox.curselection()
         if not indices:
             return
-        for i in indices:
-            core.update_file_status(self.file_list[i], status)
-        self.set_status("Status Updated")
-        self.load_files(self.filter_var.get())
 
-    def rename_current_file(self) -> None:
-        indices = self.file_listbox.curselection()
-        if not indices:
-            return
         for i in indices:
-            old_name = self.file_list[i]
-            old_path = os.path.join(self.repository_path, old_name)
-            new_name = simpledialog.askstring(
-                "Rename File", f"Enter new name for {old_name}:", initialvalue=old_name
-            )
-            if new_name and new_name != old_name:
-                if core.rename_file(old_path, new_name):
-                    self.set_status("File Renamed")
-                else:
-                    messagebox.showerror("Error", f"Could not rename {old_name}.")
+            filename = self.file_list[i]
+            core.update_file_status(filename, status)
+
+        self.update_status(f"{len(indices)} file(s) marked as '{status}'")
+        self.last_action = (
+            None  # This was a deliberate action, not undoable in the same way
+        )
         self.load_files(self.filter_var.get())
 
     def delete_current_file(self) -> None:
+        """Moves the selected file(s) to the trash after confirmation."""
         indices = self.file_listbox.curselection()
         if not indices:
             return
-        names = [self.file_list[i] for i in indices]
+
+        filenames = [self.file_list[i] for i in indices]
         if messagebox.askyesno(
-            "Confirm Action",
-            f"Are you sure you want to move {len(names)} files to the trash?",
+            "Confirm Deletion",
+            f"Are you sure you want to move {len(filenames)} file(s) to the trash?",
         ):
-            for name in names:
-                core.delete_file(os.path.join(self.repository_path, name))
-            self.set_status("File Deleted")
+            for filename in filenames:
+                file_path = os.path.join(self.repository_path, filename)
+                self.last_action = core.delete_file(file_path)
+            self.update_status(f"{len(filenames)} file(s) deleted.")
             self.load_files(self.filter_var.get())
 
-    def undo_last_action(self) -> None:
-        messagebox.showinfo("Undo", "Nothing to undo.")
-
-    def open_location(self) -> None:
-        indices = self.file_listbox.curselection()
-        if not indices:
+    def rename_current_file(self) -> None:
+        """Renames the currently selected file."""
+        if not (0 <= self.current_file_index < len(self.file_list)):
             return
-        for i in indices:
-            path = os.path.join(self.repository_path, self.file_list[i])
-            core.open_file_location(path)
+
+        old_filename = self.file_list[self.current_file_index]
+        new_filename = simpledialog.askstring(
+            "Rename File", "Enter new name:", initialvalue=old_filename
+        )
+
+        if new_filename and new_filename != old_filename:
+            self.last_action = core.rename_file(
+                os.path.join(self.repository_path, old_filename),
+                os.path.join(self.repository_path, new_filename),
+            )
+            self.update_status(f"Renamed '{old_filename}' to '{new_filename}'")
+            self.load_files(self.filter_var.get())
 
     def add_tag(self) -> None:
-        tag = self.tag_entry.get().strip()
-        if not tag or self.current_file_index < 0 or not self.file_list:
+        """Adds a tag to the selected file(s)."""
+        tag = self.tag_entry.get()
+        if not tag:
             return
-        fname = self.file_list[self.current_file_index]
-        tags = core.manage_tags(fname, tags_to_add=[tag])
-        self.tag_label.config(text="Tags: " + ", ".join(tags))
-        self.tag_entry.delete(0, tk.END)
-        self.set_status("Tag Added")
 
-    def next_file(self, reload_list: bool = False) -> None:
-        if reload_list:
+        indices = self.file_listbox.curselection()
+        if not indices:
+            return
+
+        for i in indices:
+            filename = self.file_list[i]
+            self.last_action = core.add_tag(filename, tag)
+
+        self.tag_entry.delete(0, tk.END)
+        self.update_status(f"Tag '{tag}' added to {len(indices)} file(s).")
+        self.show_preview()  # Refresh preview to show new tag
+
+    def open_location(self) -> None:
+        """Opens the file's location in the system's file explorer."""
+        if not (0 <= self.current_file_index < len(self.file_list)):
+            return
+
+        filename = self.file_list[self.current_file_index]
+        file_path = os.path.join(self.repository_path, filename)
+        core.open_file_location(file_path)
+        self.update_status(f"Opened location for {filename}")
+
+    def undo_last_action(self) -> None:
+        """Reverts the last file operation (delete or rename)."""
+        if self.last_action:
+            core.undo_action(self.last_action)
+            self.update_status("Last action undone.")
+            self.last_action = None
             self.load_files(self.filter_var.get())
         else:
-            indices = self.file_listbox.curselection()
-            if not indices:
-                return
-            for i in reversed(indices):
-                self.file_listbox.delete(i)
-                self.file_list.pop(i)
-            if not self.file_list:
-                self.preview_canvas.delete("all")
-                messagebox.showinfo("All Done!", "No more files to review.")
-                return
-            self.current_file_index = min(indices[0], len(self.file_list) - 1)
+            self.update_status("No action to undo.", duration=1500)
+
+    def next_file(self) -> None:
+        """Selects the next file in the list."""
+        if self.current_file_index < self.file_listbox.size() - 1:
             self.file_listbox.selection_clear(0, tk.END)
-            self.file_listbox.selection_set(self.current_file_index)
-            self.file_listbox.see(self.current_file_index)
-            self.show_preview()
+            self.file_listbox.selection_set(self.current_file_index + 1)
+            self.on_file_select(None)
+
+    def prev_file(self) -> None:
+        """Selects the previous file in the list."""
+        if self.current_file_index > 0:
+            self.file_listbox.selection_clear(0, tk.END)
+            self.file_listbox.selection_set(self.current_file_index - 1)
+            self.on_file_select(None)
+
+    def handle_keypress(self, event: tk.Event) -> None:
+        """Handles global keypress events for quick actions."""
+        # Ignore keypresses if an entry widget has focus
+        if isinstance(self.focus_get(), (ttk.Entry, tk.Text)):
+            return
+
+        key = event.keysym.lower()
+        if key == "k":
+            self.process_file("keep_forever")
+        elif key == "t":
+            self.process_file("keep_90_days")
+        elif key == "d":
+            self.delete_current_file()
+        elif key == "r":
+            self.rename_current_file()
+        elif key == "o":
+            self.open_location()
 
 
 if __name__ == "__main__":
