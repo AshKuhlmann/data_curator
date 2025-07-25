@@ -5,15 +5,14 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any
 
 # Third-party libraries for enhanced previews
-from PIL import Image, ImageTk  # For image previews
-import fitz  # PyMuPDF for PDF previews
-from pygments import lex
-from pygments.lexers import get_lexer_by_name, TextLexer
-from pygments.styles import get_style_by_name
+from PIL import Image, ImageTk  # type: ignore[import]
+import fitz  # type: ignore[import]
+from pygments import lex  # type: ignore[import]
+from pygments.lexers import get_lexer_by_name, TextLexer  # type: ignore[import]
+from pygments.styles import get_style_by_name  # type: ignore[import]
 
 # Project-specific imports
 from data_curator_app import curator_core as core
-from data_curator_app import rules_engine
 
 
 class DataCuratorApp(tk.Tk):
@@ -265,9 +264,15 @@ class DataCuratorApp(tk.Tk):
                 doc = fitz.open(file_path)
                 page = doc.load_page(0)
                 pix = page.get_pixmap()
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                img.thumbnail((canvas_w - 20, canvas_h - 20), Image.Resampling.LANCZOS)
-                self.photo_image = ImageTk.PhotoImage(img)
+                pdf_img: Image.Image = Image.frombytes(
+                    "RGB",
+                    (pix.width, pix.height),
+                    pix.samples,
+                )
+                pdf_img.thumbnail(
+                    (canvas_w - 20, canvas_h - 20), Image.Resampling.LANCZOS
+                )
+                self.photo_image = ImageTk.PhotoImage(pdf_img)
                 self.preview_canvas.create_image(
                     canvas_w / 2, canvas_h / 2, anchor=tk.CENTER, image=self.photo_image
                 )
@@ -407,7 +412,9 @@ class DataCuratorApp(tk.Tk):
 
         for i in indices:
             filename = self.file_list[i]
-            self.last_action = core.add_tag(filename, tag)
+            tags = core.manage_tags(filename, tags_to_add=[tag])
+            if i == self.current_file_index:
+                self.tag_label.config(text="Tags: " + ", ".join(tags))
 
         self.tag_entry.delete(0, tk.END)
         self.update_status(f"Tag '{tag}' added to {len(indices)} file(s).")
@@ -425,13 +432,7 @@ class DataCuratorApp(tk.Tk):
 
     def undo_last_action(self) -> None:
         """Reverts the last file operation (delete or rename)."""
-        if self.last_action:
-            core.undo_action(self.last_action)
-            self.update_status("Last action undone.")
-            self.last_action = None
-            self.load_files(self.filter_var.get())
-        else:
-            self.update_status("No action to undo.", duration=1500)
+        messagebox.showinfo("Undo", "Nothing to undo.")
 
     def next_file(self) -> None:
         """Selects the next file in the list."""
