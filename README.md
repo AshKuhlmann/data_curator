@@ -20,16 +20,14 @@ Visit the project Releases page and download the executable for your operating s
 
 ### Running from source
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/ashkuhlmann/data-curator.git
-cd data-curator
+Assuming you have cloned the repository and are in the project's root directory:
 
-# 2. Install dependencies with Poetry
+```bash
+# 1. Install dependencies
 pip install poetry
 poetry install
 
-# 3. Run the application
+# 2. Run the application
 poetry run python data_curator_app/main.py
 ```
 
@@ -56,10 +54,10 @@ This project is licensed under the GNU General Public License v3.0. See the [LIC
 
 To generate a standalone executable with PyInstaller:
 
-1. Add PyInstaller as a development dependency:
+1. Install development dependencies (including PyInstaller):
 
 ```bash
-poetry add pyinstaller --group dev
+poetry install
 ```
 
 2. Run the packaging command from the project root:
