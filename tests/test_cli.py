@@ -18,15 +18,17 @@ def test_scan_wrapper(mock_core):
 
 def test_set_status_wrapper(mock_core):
     """Test the set_status wrapper function."""
-    cli.set_status("file.txt", "keep_forever")
-    mock_core.update_file_status.assert_called_once_with("file.txt", "keep_forever")
+    cli.set_status("/tmp/repo", "file.txt", "keep_forever")
+    mock_core.update_file_status.assert_called_once_with(
+        "/tmp/repo", "file.txt", "keep_forever"
+    )
 
 
 def test_manage_tags_wrapper(mock_core):
     """Test the manage_tags wrapper function."""
-    cli.manage_tags("file.txt", tags_to_add=["a"], tags_to_remove=["b"])
+    cli.manage_tags("/tmp/repo", "file.txt", tags_to_add=["a"], tags_to_remove=["b"])
     mock_core.manage_tags.assert_called_once_with(
-        "file.txt", tags_to_add=["a"], tags_to_remove=["b"]
+        "/tmp/repo", "file.txt", tags_to_add=["a"], tags_to_remove=["b"]
     )
 
 
@@ -44,8 +46,8 @@ def test_delete_wrapper(mock_core):
 
 def test_get_expired_wrapper(mock_core):
     """Test the get_expired wrapper function."""
-    cli.get_expired()
-    mock_core.check_for_expired_files.assert_called_once()
+    cli.get_expired("/tmp/repo")
+    mock_core.check_for_expired_files.assert_called_once_with("/tmp/repo")
 
 
 @patch("data_curator_app.cli.scan")
