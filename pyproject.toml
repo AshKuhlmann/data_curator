@@ -1,7 +1,7 @@
 [project]
 name = "data-curator"
 version = "0.1.0"
-description = ""
+description = "Data Curator is a visual tool for cleaning up your folders one file at a time."
 authors = [
     {name = "Codex",email = "codex@openai.com"}
 ]
