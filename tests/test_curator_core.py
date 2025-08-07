@@ -199,11 +199,13 @@ def test_open_file_location_macos(tmp_path, monkeypatch):
     monkeypatch.setattr(core.os, "name", "posix", raising=False)
     monkeypatch.setattr(core.os, "uname", lambda: SimpleNamespace(sysname="Darwin"))
     called = {}
-    monkeypatch.setattr(core.os, "system", lambda cmd: called.setdefault("cmd", cmd))
+    monkeypatch.setattr(
+        core.subprocess, "run", lambda cmd, **kwargs: called.setdefault("cmd", cmd)
+    )
 
     core.open_file_location(str(file_path))
-    assert called["cmd"].startswith("open ")
-    assert str(dir_path) in called["cmd"]
+    assert called["cmd"][0] == "open"
+    assert called["cmd"][1] == str(dir_path)
 
 
 def test_open_file_location_linux(tmp_path, monkeypatch):
@@ -215,8 +217,10 @@ def test_open_file_location_linux(tmp_path, monkeypatch):
     monkeypatch.setattr(core.os, "name", "posix", raising=False)
     monkeypatch.setattr(core.os, "uname", lambda: SimpleNamespace(sysname="Linux"))
     called = {}
-    monkeypatch.setattr(core.os, "system", lambda cmd: called.setdefault("cmd", cmd))
+    monkeypatch.setattr(
+        core.subprocess, "run", lambda cmd, **kwargs: called.setdefault("cmd", cmd)
+    )
 
     core.open_file_location(str(file_path))
-    assert called["cmd"].startswith("xdg-open ")
-    assert str(dir_path) in called["cmd"]
+    assert called["cmd"][0] == "xdg-open"
+    assert called["cmd"][1] == str(dir_path)
