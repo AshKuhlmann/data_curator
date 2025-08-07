@@ -8,15 +8,15 @@ def scan(repo_path, filter_term=None):
     return core.scan_directory(repo_path, filter_term)
 
 
-def set_status(filename, status):
+def set_status(repo_path, filename, status):
     """Wrapper for core.update_file_status."""
-    core.update_file_status(filename, status)
+    core.update_file_status(repo_path, filename, status)
 
 
-def manage_tags(filename, tags_to_add=None, tags_to_remove=None):
+def manage_tags(repo_path, filename, tags_to_add=None, tags_to_remove=None):
     """Wrapper for core.manage_tags."""
     return core.manage_tags(
-        filename, tags_to_add=tags_to_add, tags_to_remove=tags_to_remove
+        repo_path, filename, tags_to_add=tags_to_add, tags_to_remove=tags_to_remove
     )
 
 
@@ -32,9 +32,9 @@ def delete(repo_path, filename):
     return core.delete_file(file_path)
 
 
-def get_expired():
+def get_expired(repo_path):
     """Wrapper for core.check_for_expired_files."""
-    return core.check_for_expired_files()
+    return core.check_for_expired_files(repo_path)
 
 
 def main():
@@ -94,11 +94,14 @@ def main():
             print("No files to review with the current filters.")
 
     elif args.command == "status":
-        set_status(args.filename, args.status)
+        set_status(args.repo_path, args.filename, args.status)
 
     elif args.command == "tag":
         tags = manage_tags(
-            args.filename, tags_to_add=args.add, tags_to_remove=args.remove
+            args.repo_path,
+            args.filename,
+            tags_to_add=args.add,
+            tags_to_remove=args.remove,
         )
         print(f"Tags for {args.filename}: {tags}")
 
@@ -109,7 +112,7 @@ def main():
         delete(args.repo_path, args.filename)
 
     elif args.command == "expired":
-        expired_files = get_expired()
+        expired_files = get_expired(args.repo_path)
         if expired_files:
             print("The following files have expired:")
             for f in expired_files:

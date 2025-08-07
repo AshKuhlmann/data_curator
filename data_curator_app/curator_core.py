@@ -2,29 +2,38 @@ import os
 import json
 from datetime import datetime, timedelta
 
-# Note: The state file path needs to be relative to the project root
-STATE_FILE = "curator_state.json"
-TARGET_REPOSITORY = ""  # We will set this from the GUI
+# The name of the state file, which will be stored in the curated repository.
+STATE_FILENAME = ".curator_state.json"
 
 
-def load_state():
-    """Loads the state of processed files from the JSON file."""
-    if not os.path.exists(STATE_FILE):
+def load_state(repo_path: str) -> dict:
+    """Loads the state of processed files from the JSON file in the repo."""
+    state_file = os.path.join(repo_path, STATE_FILENAME)
+    if not os.path.exists(state_file):
         return {}
-    with open(STATE_FILE, "r") as f:
-        return json.load(f)
+    try:
+        with open(state_file, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        # If the file is corrupted or unreadable, return an empty state
+        return {}
 
 
-def save_state(state):
-    """Saves the current state to the JSON file."""
-    with open(STATE_FILE, "w") as f:
+def save_state(repo_path: str, state: dict) -> None:
+    """Saves the current state to the JSON file in the repo."""
+    state_file = os.path.join(repo_path, STATE_FILENAME)
+    with open(state_file, "w") as f:
         json.dump(state, f, indent=4)
 
 
-def scan_directory(path, filter_term: str | None = None):
+def scan_directory(path: str, filter_term: str | None = None) -> list[str]:
     """Scans a directory and returns a list of files matching the optional filter."""
-    state = load_state()
-    all_files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+    state = load_state(path)
+    all_files = [
+        f
+        for f in os.listdir(path)
+        if os.path.isfile(os.path.join(path, f)) and not f.startswith(".")
+    ]
     processed_files = [
         f
         for f, data in state.items()
@@ -44,9 +53,11 @@ def scan_directory(path, filter_term: str | None = None):
     return files_to_review
 
 
-def update_file_status(filename, status, tags: list[str] | None = None):
+def update_file_status(
+    repo_path: str, filename: str, status: str, tags: list[str] | None = None
+) -> None:
     """Updates the status and optional tags for a file in the state file."""
-    state = load_state()
+    state = load_state(repo_path)
     if filename not in state:
         state[filename] = {}
     if "tags" not in state[filename]:
@@ -61,17 +72,18 @@ def update_file_status(filename, status, tags: list[str] | None = None):
         state[filename]["expiry_date"] = (
             datetime.now() + timedelta(days=90)
         ).isoformat()
-    save_state(state)
+    save_state(repo_path, state)
     print(f"Updated {filename} to status: {status}")
 
 
 def manage_tags(
+    repo_path: str,
     filename: str,
     tags_to_add: list[str] | None = None,
     tags_to_remove: list[str] | None = None,
 ) -> list[str]:
     """Add or remove tags for a given filename and return the updated list."""
-    state = load_state()
+    state = load_state(repo_path)
     if filename not in state:
         state[filename] = {"tags": []}
 
@@ -88,19 +100,19 @@ def manage_tags(
             t for t in state[filename]["tags"] if t not in tags_to_remove
         ]
 
-    save_state(state)
+    save_state(repo_path, state)
     return state[filename]["tags"]
 
 
-def rename_file(old_path, new_name):
+def rename_file(old_path: str, new_name: str) -> dict | None:
     """Renames a file on the filesystem and updates its state."""
-    state = load_state()
-    old_filename = os.path.basename(old_path)
     directory = os.path.dirname(old_path)
+    state = load_state(directory)
+    old_filename = os.path.basename(old_path)
     new_path = os.path.join(directory, new_name)
     if os.path.exists(new_path):
         print(f"Error: A file named {new_name} already exists.")
-        return False
+        return None
     try:
         os.rename(old_path, new_path)
         if old_filename in state:
@@ -112,23 +124,50 @@ def rename_file(old_path, new_name):
                 "status": "renamed",
                 "last_updated": datetime.now().isoformat(),
             }
-        save_state(state)
+        save_state(directory, state)
         print(f"Renamed {old_filename} to {new_name}")
-        return True
+        return {"action": "rename", "old_path": old_path, "new_path": new_path}
     except OSError as e:
         print(f"Error renaming file: {e}")
-        return False
+        return None
 
 
-def delete_file(file_path):
-    """Deletes a file from the filesystem."""
+TRASH_DIR_NAME = ".curator_trash"
+
+
+def delete_file(file_path: str) -> dict | None:
+    """Moves a file to the repository's trash directory and updates its status."""
+    directory = os.path.dirname(file_path)
+    filename = os.path.basename(file_path)
+    trash_path = os.path.join(directory, TRASH_DIR_NAME)
+
     try:
-        os.remove(file_path)
-        update_file_status(os.path.basename(file_path), "deleted")
-        print(f"Deleted {os.path.basename(file_path)}")
+        os.makedirs(trash_path, exist_ok=True)
+        new_path = os.path.join(trash_path, filename)
+        os.rename(file_path, new_path)
+
+        update_file_status(directory, filename, "deleted")
+        print(f"Moved {filename} to trash.")
+        return {"action": "delete", "original_path": file_path, "new_path": new_path}
+    except OSError as e:
+        print(f"Error moving file to trash: {e}")
+        return None
+
+
+def undo_delete(last_action: dict) -> bool:
+    """Restores a file from the trash and updates its status."""
+    original_path = last_action["original_path"]
+    from_path = last_action["new_path"]
+    repo_path = os.path.dirname(original_path)
+    filename = os.path.basename(original_path)
+
+    try:
+        os.rename(from_path, original_path)
+        update_file_status(repo_path, filename, "decide_later")
+        print(f"Restored {filename} from trash.")
         return True
     except OSError as e:
-        print(f"Error deleting file: {e}")
+        print(f"Error restoring file from trash: {e}")
         return False
 
 
@@ -143,9 +182,9 @@ def open_file_location(file_path):
         os.system(f'xdg-open "{directory}"')
 
 
-def check_for_expired_files():
+def check_for_expired_files(repo_path: str) -> list[str]:
     """Scan the state file for items whose keep period expired."""
-    state = load_state()
+    state = load_state(repo_path)
     expired_files: list[str] = []
     today = datetime.now()
 

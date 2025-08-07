@@ -12,7 +12,6 @@ from pygments.lexers import get_lexer_by_name, TextLexer  # type: ignore[import]
 from pygments.styles import get_style_by_name  # type: ignore[import]
 
 # Project-specific imports
-from data_curator_app import cli
 from data_curator_app import curator_core as core
 
 
@@ -203,7 +202,7 @@ class DataCuratorApp(tk.Tk):
         """Loads and filters files from the repository."""
         if not self.repository_path:
             return
-        state = core.load_state()
+        state = core.load_state(self.repository_path)
         all_files = os.listdir(self.repository_path)
 
         # Filter out files that have already been processed
@@ -243,7 +242,7 @@ class DataCuratorApp(tk.Tk):
 
         filename = self.file_list[self.current_file_index]
         file_path = os.path.join(self.repository_path, filename)
-        tags = core.load_state().get(filename, {}).get("tags", [])
+        tags = core.load_state(self.repository_path).get(filename, {}).get("tags", [])
         self.tag_label.config(text="Tags: " + ", ".join(tags))
 
         try:
@@ -358,7 +357,7 @@ class DataCuratorApp(tk.Tk):
 
         for i in indices:
             filename = self.file_list[i]
-            cli.set_status(filename, status)
+            core.update_file_status(self.repository_path, filename, status)
 
         self.update_status(f"{len(indices)} file(s) marked as '{status}'")
         self.last_action = (
@@ -367,19 +366,29 @@ class DataCuratorApp(tk.Tk):
         self.load_files(self.filter_var.get())
 
     def delete_current_file(self) -> None:
-        """Moves the selected file(s) to the trash after confirmation."""
+        """Moves the selected file to the trash after confirmation."""
         indices = self.file_listbox.curselection()
         if not indices:
             return
+        if len(indices) > 1:
+            messagebox.showinfo(
+                "Undo Limitation", "Can only delete and undo one file at a time."
+            )
+            return
 
-        filenames = [self.file_list[i] for i in indices]
+        filename = self.file_list[indices[0]]
         if messagebox.askyesno(
             "Confirm Deletion",
-            f"Are you sure you want to move {len(filenames)} file(s) to the trash?",
+            f"Are you sure you want to move '{filename}' to the trash?",
         ):
-            for filename in filenames:
-                self.last_action = cli.delete(self.repository_path, filename)
-            self.update_status(f"{len(filenames)} file(s) deleted.")
+            file_path = os.path.join(self.repository_path, filename)
+            result = core.delete_file(file_path)
+            if result:
+                self.last_action = result
+                self.update_status(f"Moved '{filename}' to trash.")
+            else:
+                self.last_action = None
+                messagebox.showerror("Error", f"Could not delete '{filename}'.")
             self.load_files(self.filter_var.get())
 
     def rename_current_file(self) -> None:
@@ -393,10 +402,16 @@ class DataCuratorApp(tk.Tk):
         )
 
         if new_filename and new_filename != old_filename:
-            self.last_action = cli.rename(
-                self.repository_path, old_filename, new_filename
-            )
-            self.update_status(f"Renamed '{old_filename}' to '{new_filename}'")
+            old_path = os.path.join(self.repository_path, old_filename)
+            result = core.rename_file(old_path, new_filename)
+            if result:
+                self.last_action = result
+                self.update_status(f"Renamed '{old_filename}' to '{new_filename}'")
+            else:
+                self.last_action = None
+                messagebox.showerror(
+                    "Error", f"Could not rename to '{new_filename}'. File may exist."
+                )
             self.load_files(self.filter_var.get())
 
     def add_tag(self) -> None:
@@ -411,7 +426,7 @@ class DataCuratorApp(tk.Tk):
 
         for i in indices:
             filename = self.file_list[i]
-            tags = cli.manage_tags(filename, tags_to_add=[tag])
+            tags = core.manage_tags(self.repository_path, filename, tags_to_add=[tag])
             if i == self.current_file_index:
                 self.tag_label.config(text="Tags: " + ", ".join(tags))
 
@@ -431,7 +446,37 @@ class DataCuratorApp(tk.Tk):
 
     def undo_last_action(self) -> None:
         """Reverts the last file operation (delete or rename)."""
-        messagebox.showinfo("Undo", "Nothing to undo.")
+        if not self.last_action:
+            messagebox.showinfo("Undo", "Nothing to undo.")
+            return
+
+        action = self.last_action.get("action")
+        try:
+            if action == "rename":
+                old_path = self.last_action["new_path"]
+                new_name = os.path.basename(self.last_action["old_path"])
+                core.rename_file(old_path, new_name)
+                self.update_status(f"Undo rename: '{os.path.basename(old_path)}'")
+
+            elif action == "delete":
+                if core.undo_delete(self.last_action):
+                    filename = os.path.basename(self.last_action["original_path"])
+                    self.update_status(f"Undo delete: '{filename}' restored.")
+                else:
+                    messagebox.showerror("Undo Failed", "Could not restore the file.")
+                    return  # Keep last_action for another try
+
+            else:
+                messagebox.showerror("Undo", "Unknown action to undo.")
+                return
+
+            self.last_action = None  # Clear action after undo
+            self.load_files(self.filter_var.get())
+
+        except Exception as e:
+            messagebox.showerror(
+                "Undo Failed", f"Could not undo the last action.\n\nError: {e}"
+            )
 
     def next_file(self) -> None:
         """Selects the next file in the list."""
