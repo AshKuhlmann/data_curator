@@ -12,6 +12,7 @@ from pygments.lexers import get_lexer_by_name, TextLexer  # type: ignore[import]
 from pygments.styles import get_style_by_name  # type: ignore[import]
 
 # Project-specific imports
+from data_curator_app import cli
 from data_curator_app import curator_core as core
 
 
@@ -357,7 +358,7 @@ class DataCuratorApp(tk.Tk):
 
         for i in indices:
             filename = self.file_list[i]
-            core.update_file_status(filename, status)
+            cli.set_status(filename, status)
 
         self.update_status(f"{len(indices)} file(s) marked as '{status}'")
         self.last_action = (
@@ -377,8 +378,7 @@ class DataCuratorApp(tk.Tk):
             f"Are you sure you want to move {len(filenames)} file(s) to the trash?",
         ):
             for filename in filenames:
-                file_path = os.path.join(self.repository_path, filename)
-                self.last_action = core.delete_file(file_path)
+                self.last_action = cli.delete(self.repository_path, filename)
             self.update_status(f"{len(filenames)} file(s) deleted.")
             self.load_files(self.filter_var.get())
 
@@ -393,9 +393,8 @@ class DataCuratorApp(tk.Tk):
         )
 
         if new_filename and new_filename != old_filename:
-            self.last_action = core.rename_file(
-                os.path.join(self.repository_path, old_filename),
-                os.path.join(self.repository_path, new_filename),
+            self.last_action = cli.rename(
+                self.repository_path, old_filename, new_filename
             )
             self.update_status(f"Renamed '{old_filename}' to '{new_filename}'")
             self.load_files(self.filter_var.get())
@@ -412,7 +411,7 @@ class DataCuratorApp(tk.Tk):
 
         for i in indices:
             filename = self.file_list[i]
-            tags = core.manage_tags(filename, tags_to_add=[tag])
+            tags = cli.manage_tags(filename, tags_to_add=[tag])
             if i == self.current_file_index:
                 self.tag_label.config(text="Tags: " + ", ".join(tags))
 
