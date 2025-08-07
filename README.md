@@ -31,6 +31,26 @@ poetry install
 poetry run python data_curator_app/main.py
 ```
 
+## Updating
+
+To get the latest features and bugfixes, you should update Data Curator regularly. The process depends on how you installed the application.
+
+### From a Released Executable
+
+If you are using a pre-built executable, visit the project's Releases page, download the latest version for your operating system, and replace your old executable with the new one.
+
+### From Source
+
+If you are running the application from source, navigate to the project's root directory in your terminal and run the following commands:
+
+```bash
+# 1. Pull the latest changes from the repository
+git pull
+
+# 2. Install any new or updated dependencies
+poetry install
+```
+
 ## How to Use
 
 1. Launch **Data Curator**.
