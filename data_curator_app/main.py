@@ -205,9 +205,13 @@ class DataCuratorApp(tk.Tk):
         state = core.load_state(self.repository_path)
         all_files = os.listdir(self.repository_path)
 
-        # Filter out files that have already been processed
+        # Filter out files that have already been processed (e.g. kept or deleted)
+        processed_statuses = {"keep_forever", "keep_90_days", "deleted"}
         self.file_list = [
-            f for f in all_files if f not in state and not f.startswith(".")
+            f
+            for f in all_files
+            if not f.startswith(".")
+            and state.get(f, {}).get("status") not in processed_statuses
         ]
 
         # Apply user's filter text
@@ -367,16 +371,17 @@ class DataCuratorApp(tk.Tk):
 
     def delete_current_file(self) -> None:
         """Moves the selected file to the trash after confirmation."""
-        indices = self.file_listbox.curselection()
-        if not indices:
+        if not (0 <= self.current_file_index < len(self.file_list)):
             return
-        if len(indices) > 1:
+
+        # Check for multiple selections, which we don't support for undo
+        if len(self.file_listbox.curselection()) > 1:
             messagebox.showinfo(
                 "Undo Limitation", "Can only delete and undo one file at a time."
             )
             return
 
-        filename = self.file_list[indices[0]]
+        filename = self.file_list[self.current_file_index]
         if messagebox.askyesno(
             "Confirm Deletion",
             f"Are you sure you want to move '{filename}' to the trash?",
