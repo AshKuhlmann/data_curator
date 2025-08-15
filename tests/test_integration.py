@@ -1,4 +1,3 @@
-import os
 import json
 import subprocess
 from typing import List
@@ -12,9 +11,7 @@ def run_cli(repo_path: str, command: List[str]) -> subprocess.CompletedProcess:
     """Helper function to run the CLI in a subprocess."""
     base_command = ["python", "-m", "data_curator_app.cli", repo_path]
     full_command = base_command + command
-    return subprocess.run(
-        full_command, capture_output=True, text=True, check=False
-    )
+    return subprocess.run(full_command, capture_output=True, text=True, check=False)
 
 
 def test_cli_delete_end_to_end(tmp_path):
