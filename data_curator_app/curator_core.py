@@ -86,11 +86,13 @@ def scan_directory(directory_path: str, filter_term: Optional[str] = None) -> Li
     ]
 
     # Identify files that have already been assigned a permanent status.
-    processed_files = {
-        filename
-        for filename, metadata in curation_state.items()
-        if metadata.get("status") and metadata.get("status") != "decide_later"
-    }
+    processed_files = set()
+    for filename, metadata in curation_state.items():
+        # A malformed state entry might not be a dictionary.
+        if isinstance(metadata, dict):
+            status = metadata.get("status")
+            if status and status != "decide_later":
+                processed_files.add(filename)
 
     # Files to review are those present in the directory but not in the processed set.
     files_to_review = [f for f in all_files_in_directory if f not in processed_files]
