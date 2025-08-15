@@ -33,6 +33,12 @@ Here is a breakdown of the key directories and files in the project:
 └── README.md             # Project overview and user guide
 ```
 
+## Developer Guidelines
+
+Before contributing, please note the following:
+
+- **Pre-commit Checks**: The `AGENTS.md` file in the root directory specifies pre-commit checks that must be run before finalizing any changes. This ensures code quality and consistency across the project.
+
 ## Core Components
 
 The application is divided into several distinct components, each with a specific responsibility.
