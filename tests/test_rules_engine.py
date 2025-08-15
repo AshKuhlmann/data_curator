@@ -154,3 +154,24 @@ def test_evaluate_file_first_match_wins(tmp_path, rules_file):
     assert result is not None
     assert result["name"] == "Tag screenshots"
     assert result["action_value"] == "screenshot"
+
+
+def test_evaluate_file_with_invalid_condition(tmp_path):
+    """
+    Test that the engine handles rules with invalid conditions gracefully.
+    """
+    # This rule is missing the 'operator' field in its condition.
+    rules = [
+        {
+            "name": "Invalid Rule",
+            "conditions": [{"field": "extension", "value": ".log"}],
+            "action": "delete",
+        }
+    ]
+
+    log_file = tmp_path / "test.log"
+    log_file.touch()
+
+    # The engine should not crash and should not match the invalid rule.
+    result = engine.evaluate_file("test.log", str(log_file), rules)
+    assert result is None

@@ -277,3 +277,40 @@ def test_delete_file_nonexistent(tmp_path):
     non_existent_path = tmp_path / "non_existent.txt"
     result = core.delete_file(str(non_existent_path))
     assert result is None
+
+
+def test_scan_directory_ignores_subdirectories(tmp_path):
+    """
+    Test that scan_directory ignores subdirectories and only lists files.
+    """
+    repo_path = str(tmp_path)
+    (tmp_path / "file1.txt").write_text("file 1")
+    (tmp_path / "file2.txt").write_text("file 2")
+    (tmp_path / "a_subdirectory").mkdir()
+
+    # The scan should only find the two files, not the subdirectory.
+    result = core.scan_directory(repo_path)
+    assert sorted(result) == ["file1.txt", "file2.txt"]
+
+
+def test_scan_directory_with_malformed_state_entry(tmp_path):
+    """
+    Test that scan_directory handles a malformed entry in the state file.
+    If a file's metadata is not a dictionary, it should be treated as
+    unprocessed and included in the scan results.
+    """
+    repo_path = str(tmp_path)
+    (tmp_path / "file1.txt").write_text("file 1")
+    (tmp_path / "file2.txt").write_text("file 2")
+
+    # Create a state file with one valid entry and one malformed entry
+    state = {
+        "file1.txt": {"status": "keep_forever"},
+        "file2.txt": "this-should-be-a-dictionary-but-is-not",
+    }
+    core.save_state(repo_path, state)
+
+    # scan_directory should ignore file1.txt but include file2.txt because
+    # its state is unrecognizable.
+    result = core.scan_directory(repo_path)
+    assert result == ["file2.txt"]
