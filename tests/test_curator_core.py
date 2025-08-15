@@ -224,3 +224,56 @@ def test_open_file_location_linux(tmp_path, monkeypatch):
     core.open_file_location(str(file_path))
     assert called["cmd"][0] == "xdg-open"
     assert called["cmd"][1] == str(dir_path)
+
+
+def test_load_state_corrupted(tmp_path):
+    """Test that a corrupted or invalid state file returns an empty dictionary."""
+    repo_path = str(tmp_path)
+    state_file = tmp_path / core.STATE_FILENAME
+    state_file.write_text("this is not valid json")
+    assert core.load_state(repo_path) == {}
+
+
+def test_scan_directory_filter_case_insensitive(tmp_path):
+    """Test that the scan directory filter is case-insensitive."""
+    dir_path = tmp_path / "repo"
+    dir_path.mkdir()
+    repo_path = str(dir_path)
+
+    (dir_path / "file_one.txt").write_text("data")
+    (dir_path / "file_two.txt").write_text("data")
+
+    # The filter 'ONE' should match 'file_one.txt'
+    result = core.scan_directory(repo_path, "ONE")
+    assert result == ["file_one.txt"]
+
+
+def test_check_for_expired_files_invalid_date(tmp_path, capsys):
+    """Test that an invalid date format in the state is handled gracefully."""
+    repo_path = str(tmp_path)
+    state = {
+        "bad_date.txt": {
+            "status": "keep_90_days",
+            "expiry_date": "not-a-valid-date",
+        },
+    }
+    core.save_state(repo_path, state)
+    expired = core.check_for_expired_files(repo_path)
+    assert expired == []
+    # Check that a warning was printed to stderr (or stdout)
+    captured = capsys.readouterr()
+    assert "Warning: Invalid date format" in captured.out
+
+
+def test_rename_file_nonexistent(tmp_path):
+    """Test that renaming a non-existent file fails and returns None."""
+    non_existent_path = tmp_path / "non_existent.txt"
+    result = core.rename_file(str(non_existent_path), "new.txt")
+    assert result is None
+
+
+def test_delete_file_nonexistent(tmp_path):
+    """Test that deleting a non-existent file fails and returns None."""
+    non_existent_path = tmp_path / "non_existent.txt"
+    result = core.delete_file(str(non_existent_path))
+    assert result is None
