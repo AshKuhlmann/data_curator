@@ -314,3 +314,42 @@ def test_scan_directory_with_malformed_state_entry(tmp_path):
     # its state is unrecognizable.
     result = core.scan_directory(repo_path)
     assert result == ["file2.txt"]
+
+
+def test_scan_directory_sorting(tmp_path):
+    """Test the sorting functionality of scan_directory."""
+    repo_path = str(tmp_path)
+    # Create files with different names, sizes, and modification times
+    (tmp_path / "b.txt").write_text("medium")
+    (tmp_path / "c.txt").write_text("long long text")
+    (tmp_path / "a.txt").write_text("short")
+
+    # --- Test sorting by name ---
+    result = core.scan_directory(repo_path, sort_by="name", sort_order="asc")
+    assert result == ["a.txt", "b.txt", "c.txt"]
+    result = core.scan_directory(repo_path, sort_by="name", sort_order="desc")
+    assert result == ["c.txt", "b.txt", "a.txt"]
+
+    # --- Test sorting by size ---
+    result = core.scan_directory(repo_path, sort_by="size", sort_order="asc")
+    assert result == ["a.txt", "b.txt", "c.txt"]
+    result = core.scan_directory(repo_path, sort_by="size", sort_order="desc")
+    assert result == ["c.txt", "b.txt", "a.txt"]
+
+    # --- Test sorting by date ---
+    import os
+    import time
+
+    now = time.time()
+    os.utime(str(tmp_path / "a.txt"), (now, now - 100))
+    os.utime(str(tmp_path / "b.txt"), (now, now - 200))
+    os.utime(str(tmp_path / "c.txt"), (now, now - 50))
+
+    result = core.scan_directory(repo_path, sort_by="date", sort_order="asc")
+    assert result == ["b.txt", "a.txt", "c.txt"]
+    result = core.scan_directory(repo_path, sort_by="date", sort_order="desc")
+    assert result == ["c.txt", "a.txt", "b.txt"]
+
+    # --- Test default sorting (by name, asc) ---
+    result = core.scan_directory(repo_path)
+    assert result == ["a.txt", "b.txt", "c.txt"]

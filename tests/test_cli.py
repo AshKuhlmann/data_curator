@@ -20,6 +20,7 @@ def mock_main_handlers():
         patch("data_curator_app.cli.handle_rename", autospec=True) as m_rename,
         patch("data_curator_app.cli.handle_delete", autospec=True) as m_delete,
         patch("data_curator_app.cli.handle_get_expired", autospec=True) as m_expired,
+        patch("data_curator_app.cli.handle_sort", autospec=True) as m_sort,
     ):
         yield {
             "scan": m_scan,
@@ -28,6 +29,7 @@ def mock_main_handlers():
             "rename": m_rename,
             "delete": m_delete,
             "expired": m_expired,
+            "sort": m_sort,
         }
 
 
@@ -68,9 +70,35 @@ def test_handle_get_expired_output_none(mock_core, capsys):
 
 def test_main_scan_command(mock_main_handlers, monkeypatch):
     """Test that the main function correctly dispatches the scan command."""
-    monkeypatch.setattr("sys.argv", ["cli.py", "/tmp/repo", "scan", "--filter", "term"])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "cli.py",
+            "/tmp/repo",
+            "scan",
+            "--filter",
+            "term",
+            "--sort-by",
+            "date",
+            "--sort-order",
+            "desc",
+        ],
+    )
     cli.main()
-    mock_main_handlers["scan"].assert_called_once_with("/tmp/repo", "term")
+    mock_main_handlers["scan"].assert_called_once_with(
+        "/tmp/repo", filter_term="term", sort_by="date", sort_order="desc"
+    )
+
+
+def test_main_sort_command(mock_main_handlers, monkeypatch):
+    """Test that the main function correctly dispatches the sort command."""
+    monkeypatch.setattr(
+        "sys.argv", ["cli.py", "/tmp/repo", "sort", "size", "--order", "desc"]
+    )
+    cli.main()
+    mock_main_handlers["sort"].assert_called_once_with(
+        "/tmp/repo", sort_by="size", sort_order="desc"
+    )
 
 
 def test_main_status_command(mock_main_handlers, monkeypatch):

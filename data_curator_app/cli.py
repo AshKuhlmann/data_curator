@@ -29,21 +29,41 @@ from data_curator_app import curator_core as core
 # underlying business logic.
 
 
-def handle_scan(repository_path: str, filter_term: Optional[str] = None) -> None:
+def handle_scan(
+    repository_path: str,
+    filter_term: Optional[str] = None,
+    sort_by: str = "name",
+    sort_order: str = "asc",
+) -> None:
     """
-    Finds and displays files awaiting review, with an optional filter.
+    Finds and displays files awaiting review, with filtering and sorting.
 
     Args:
         repository_path: The path to the repository to scan.
         filter_term: A term to filter the files by.
+        sort_by: The key to sort by ('name', 'date', 'size').
+        sort_order: The order to sort in ('asc', 'desc').
     """
-    files_to_review = core.scan_directory(repository_path, filter_term)
+    files_to_review = core.scan_directory(
+        repository_path,
+        filter_term=filter_term,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
     if files_to_review:
         print("Files available for review:")
         for filename in files_to_review:
             print(f"  - {filename}")
     else:
         print("No files to review with the current filters.")
+
+
+def handle_sort(repository_path: str, sort_by: str, sort_order: str) -> None:
+    """A wrapper for handle_scan to sort files."""
+    print(f"Sorting by {sort_by} in {sort_order} order.")
+    handle_scan(
+        repository_path, filter_term=None, sort_by=sort_by, sort_order=sort_order
+    )
 
 
 def handle_set_status(repository_path: str, filename: str, status: str) -> None:
@@ -151,6 +171,34 @@ def main() -> None:
     scan_parser.add_argument(
         "--filter", help="Filter files by a search term in the filename or tags."
     )
+    scan_parser.add_argument(
+        "--sort-by",
+        choices=["name", "date", "size"],
+        default="name",
+        help="The key to sort files by (default: name).",
+    )
+    scan_parser.add_argument(
+        "--sort-order",
+        choices=["asc", "desc"],
+        default="asc",
+        help="The order to sort files in (default: asc).",
+    )
+
+    # --- Sort Command ---
+    sort_parser = subparsers.add_parser(
+        "sort", help="Sort and list files needing review."
+    )
+    sort_parser.add_argument(
+        "sort_by",
+        choices=["name", "date", "size"],
+        help="The key to sort files by.",
+    )
+    sort_parser.add_argument(
+        "--order",
+        choices=["asc", "desc"],
+        default="asc",
+        help="The order to sort in (default: asc).",
+    )
 
     # --- Status Command ---
     status_parser = subparsers.add_parser(
@@ -193,7 +241,14 @@ def main() -> None:
 
     # Dispatch the command to its corresponding handler function.
     if args.command == "scan":
-        handle_scan(args.repository_path, args.filter)
+        handle_scan(
+            args.repository_path,
+            filter_term=args.filter,
+            sort_by=args.sort_by,
+            sort_order=args.sort_order,
+        )
+    elif args.command == "sort":
+        handle_sort(args.repository_path, sort_by=args.sort_by, sort_order=args.order)
     elif args.command == "status":
         handle_set_status(args.repository_path, args.filename, args.status)
     elif args.command == "tag":
