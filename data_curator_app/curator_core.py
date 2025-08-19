@@ -62,21 +62,27 @@ def save_state(repository_path: str, state: Dict[str, Any]) -> None:
         json.dump(state, f, indent=4)
 
 
-def scan_directory(directory_path: str, filter_term: Optional[str] = None) -> List[str]:
+def scan_directory(
+    directory_path: str,
+    filter_term: Optional[str] = None,
+    sort_by: str = "name",
+    sort_order: str = "asc",
+) -> List[str]:
     """
-    Scans a directory for files that need review.
+    Scans a directory for files that need review, with sorting options.
 
     This function lists all files in the given directory, excluding any that have
     already been processed (i.e., have a status other than 'decide_later').
-    It can also filter the results based on a search term.
+    It can also filter the results based on a search term and sort them.
 
     Args:
         directory_path: The path to the directory to scan.
-        filter_term: An optional string to filter filenames and their tags. The
-                     filter is case-insensitive.
+        filter_term: An optional string to filter filenames and their tags.
+        sort_by: The key to sort by ('name', 'date', 'size').
+        sort_order: The order to sort in ('asc', 'desc').
 
     Returns:
-        A list of filenames that are pending review.
+        A list of filenames that are pending review, sorted as requested.
     """
     curation_state = load_state(directory_path)
     all_files_in_directory = [
@@ -110,7 +116,17 @@ def scan_directory(directory_path: str, filter_term: Optional[str] = None) -> Li
                 filtered_list.append(filename)
         files_to_review = filtered_list
 
-    return sorted(files_to_review)  # Sort for consistent order.
+    # --- Sorting Logic ---
+    reverse_order = sort_order.lower() == "desc"
+
+    def sort_key(filename: str) -> Any:
+        if sort_by == "date":
+            return os.path.getmtime(os.path.join(directory_path, filename))
+        if sort_by == "size":
+            return os.path.getsize(os.path.join(directory_path, filename))
+        return filename.lower()
+
+    return sorted(files_to_review, key=sort_key, reverse=reverse_order)
 
 
 def update_file_status(
