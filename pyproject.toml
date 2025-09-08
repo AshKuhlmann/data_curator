@@ -1,17 +1,16 @@
 [project]
 name = "data-curator"
 version = "0.1.0"
-description = "Data Curator is a visual tool for cleaning up your folders one file at a time."
+description = "Data Curator is a command-line tool to curate files one-by-one with persistent state, tagging, safe delete/restore, and JSON-friendly output."
 authors = [
     {name = "Codex",email = "codex@openai.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = [
-    "pillow (>=11.3.0,<12.0.0)",
-    "pymupdf (>=1.26.3,<2.0.0)",
-    "pygments (>=2.19.0,<3.0.0)"
-]
+dependencies = []
+
+[project.scripts]
+data-curator = "data_curator_app.cli:main"
 
 
 [build-system]
@@ -26,6 +25,3 @@ black = "^25.1.0"
 ruff = "^0.12.2"
 mypy = "^1.16.1"
 pytest = "^8.4.1"
-pyinstaller = {version = "^6.14.2", python = "<3.14"}
-types-pillow = "^10.2.0.20240822"
-
