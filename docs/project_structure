@@ -1,0 +1,130 @@
+# Data Curator — Project Structure and Update Guide
+
+This document explains how the repository is organized, how the main parts work together, and where to make changes when adding features or fixing bugs. It’s intended to make maintenance and iteration straightforward for future contributors.
+
+## Overview
+
+- Purpose: CLI tool to curate files in a folder one-at-a-time, tracking decisions in a local JSON state file so sessions can resume seamlessly.
+- Interface: CLI (argparse).
+- Core: Pure functions that manage on-disk state and file operations, used by the CLI.
+- State: Each curated folder contains a `.curator_state.json` and an optional `.curator_trash/` directory.
+
+Requires Python `>= 3.11`. Managed with Poetry.
+
+## Repository Layout
+
+- `data_curator_app/`: Application package
+  - `__init__.py`: Package marker
+  - `curator_core.py`: Core business logic (state, scanning, tag mgmt, file ops)
+  - `cli.py`: CLI entry and handlers (wraps core)
+  - `rules_engine.py`: Simple rules DSL for automations
+- `tests/`: Pytest test suite mirroring components
+- `scripts/`: Dev utilities
+  - `pre-commit`: Local gate mirroring CI (format, lint, type-check, test, install)
+- `docs/`: Documentation and planning notes
+- `pyproject.toml`: Project metadata; Poetry config; dependencies and dev tools
+- `poetry.lock`: Locked dependency graph
+- `README.md`: Quickstart, usage, and packaging notes
+- `LICENSE`: GPLv3
+
+Common files created in curated folders:
+- `.curator_state.json`: Per-repo state (statuses, tags, timestamps, optional expiry)
+- `.curator_trash/`: Safe “trash” folder for soft-deletes
+- `.curatorignore` (optional): Ignore patterns when scanning
+
+## Core Components
+
+1) `curator_core.py` (single source of truth)
+- Load/save state: `load_state`, `save_state` (JSON at repo root).
+- Scan: `scan_directory(path, filter_term, sort_by, sort_order, recursive, include_patterns, exclude_patterns, ignore_filename)` returns files pending review.
+  - Skips hidden files/dirs, respects `.curatorignore`, supports include/exclude globs.
+  - Filters by filename or tag; sorts by name/date/size.
+- Status: `update_file_status(path, filename, status, tags=None)` writes status and optional 90‑day expiry for temporary keep.
+- Tags: `manage_tags(path, filename, tags_to_add, tags_to_remove)` returns updated tag list.
+- File ops:
+  - `rename_file(old_filepath, new_filename)` updates filesystem and state; returns undo context.
+  - `delete_file(filepath)` moves file to `.curator_trash` with unique name; updates state; returns undo context.
+  - `undo_delete(last_action)` restores and resets status to `decide_later`.
+  - `reset_expired_to_decide_later(path)` converts expired temp keeps back to `decide_later`.
+- UX helper: `open_file_location(filepath)` opens file’s folder cross‑platform.
+
+2) `cli.py` (thin wrapper over core)
+- Installed entry point: `data-curator` (via `project.scripts` in `pyproject.toml`).
+- Subcommands (selected):
+  - `scan [--filter --sort-by name|date|size --sort-order asc|desc --recursive --include GLOB --exclude GLOB --json --limit --offset --quiet]`
+  - `sort <name|date|size> [--order asc|desc ...same flags as scan...]`
+  - `status <filename> <keep_forever|keep_90_days|decide_later> [--force --json --quiet]`
+  - `tag <filename> [--add TAG ...] [--remove TAG ...] [--force --json --quiet]`
+  - `rename <old> <new> [--json]`
+  - `delete <filename> [--yes --json --quiet]`
+  - `expired [--mark-decide-later --json --quiet]`
+  - `restore <filename> [--json]`
+  - `status-batch --files F1 F2 ... --status <...> [--force --json --quiet]`
+  - `tag-batch --files F1 F2 ... [--add TAG ...] [--remove TAG ...] [--force --json --quiet]`
+- Handlers perform basic checks, delegate to core, and optionally emit JSON for scripting.
+
+3) `rules_engine.py` (automation building block)
+- Load rules from `curator_rules.json`.
+- Evaluate files with conditions (`extension`, `filename`, `age_days`) and simple operators (`is`, `contains`, `startswith`, `endswith`, `gt`, `lt`).
+- Returns first matching action (`delete`, `add_tag`, …). Integration points exist for future CLI automation.
+
+## Data and Conventions
+
+- Status values: `keep_forever`, `keep_90_days` (adds `expiry_date`), `decide_later`, `deleted`, `renamed`.
+- Tagging: Stored per-filename array in state; used for filtering and display.
+- Sorting: `name` (casefold), `date` (mtime), `size` (bytes).
+- Ignore behavior:
+  - Hidden files/dirs ignored by default.
+  - `.curatorignore` supports glob-style patterns; also combine with `--include/--exclude` for ad‑hoc scans.
+
+## Development Workflow
+
+Install and run from source:
+- `pip install poetry`
+- `poetry install`
+- CLI: `poetry run data-curator /path/to/repo scan --json`
+
+Local quality gates (run before PR):
+- `./scripts/pre-commit` runs:
+  - `black --check .`
+  - `ruff check .`
+  - `mypy data_curator_app`
+  - `pytest -q` (treats “no tests collected” as success)
+  - `python -m pip install .` (sanity check packaging)
+
+Dependencies (see `pyproject.toml`):
+- Runtime: Pillow, PyMuPDF, Pygments
+- Dev: black, ruff, mypy, pytest
+
+## Extending the Project
+
+Add a new core capability:
+- Implement in `curator_core.py` with clear, testable functions.
+- Write or update tests in `tests/` (prefer isolated, tmp paths; avoid global state).
+- If user-facing, expose via CLI (`cli.py`).
+
+Add a new CLI command:
+- Add a subparser and handler in `cli.py`.
+- Keep parsing/IO in CLI; delegate logic to `curator_core.py`.
+- Provide `--json` output when useful.
+
+Add or use rules:
+- Update `rules_engine.py` if new attributes/operators are needed.
+- Glue into the CLI (e.g., “apply rules” action) by calling `evaluate_file` per item.
+
+## Testing Notes
+
+- Use `pytest` with `tmp_path` for filesystem interactions.
+- Mock external calls (e.g., CLI handlers patch core in CLI tests).
+- Keep tests fast and deterministic; avoid depending on system state.
+
+## Packaging
+
+- Entry point: `data-curator` is defined in `pyproject.toml`.
+
+## Troubleshooting
+
+- Type errors: run `poetry run mypy data_curator_app`.
+- Lint or style: `poetry run ruff check .` and `poetry run black .` (omit `--check` locally to auto-fix).
+- Tests: `poetry run pytest -q`.
+- Packaging: ensure `pyproject.toml` has correct `project` and `tool.poetry` sections; `python -m pip install .` should succeed.

@@ -7,7 +7,6 @@ This single document condenses the current documentation into a concise, navigab
 - Repository Structure
 - Core Components
 - CLI Summary
-- GUI Summary
 - Rules Engine
 - Development Workflow
 - Quality Gates
@@ -17,7 +16,7 @@ This single document condenses the current documentation into a concise, navigab
 - Troubleshooting
 
 ## Project Overview
-Data Curator helps you curate files in a directory one at a time, tracking decisions in a local JSON state so sessions can resume. The project offers both a GUI (Tkinter) and a CLI (argparse), built on shared core functions.
+Data Curator helps you curate files in a directory one at a time, tracking decisions in a local JSON state so sessions can resume. The project provides a CLI (argparse) built on shared core functions.
 
 Requires Python >= 3.11. Dependency management via Poetry.
 
@@ -25,7 +24,6 @@ Requires Python >= 3.11. Dependency management via Poetry.
 - `data_curator_app/`: Application package
   - `curator_core.py`: State, scanning, tags, file ops (SSOT)
   - `cli.py`: CLI entry and handlers
-  - `main.py`: Tkinter GUI
   - `rules_engine.py`: Simple rules DSL and evaluator
 - `tests/`: Pytest suite
 - `scripts/pre-commit`: Local CI gate (format/lint/type/test/install)
@@ -51,13 +49,9 @@ Common files created in curated folders:
 - Thin wrapper: parse args, validate, delegate to core
 - Supports JSON and quiet modes for scripting
 
-3) GUI (`main.py`)
-- Three-pane layout: file list, preview, actions
-- Previews: images (Pillow), PDFs (PyMuPDF), CSVs (Treeview), text/code (Pygments)
-
-4) Rules (`rules_engine.py`)
+3) Rules (`rules_engine.py`)
 - Evaluate simple conditions on file attributes; return first matching action
-- Basis for future CLI/GUI automation hooks
+- Basis for future CLI automation hooks
 
 ## CLI Summary
 Installed entry point: `data-curator`
@@ -72,11 +66,6 @@ Conventions:
 - Sorting: name (casefold), date (mtime), size (bytes)
 - Exit codes standardized for common error cases (in progress)
 
-## GUI Summary
-- Operates on a repository directory
-- Maps UI actions to core functions (keep, temp keep, rename, delete/undo)
-- Performs constrained previews for performance and safety
-
 ## Rules Engine
 - Inputs: `curator_rules.json`
 - Conditions: `extension`, `filename`, `age_days`; operators like `is`, `contains`, `gt`, etc.
@@ -88,7 +77,6 @@ Conventions:
   - `pip install poetry`
   - `poetry install`
 - Run:
-  - GUI: `poetry run python data_curator_app/main.py`
   - CLI: `poetry run data-curator /path scan --json`
 
 ## Quality Gates
@@ -140,4 +128,3 @@ Documentation tasks:
 
 ---
 Status note: This compendium reflects the current `docs/` set (`project_structure`, `project_organization.md`, `devlog.md`, `plan.md`, `user_feedback.md`) in condensed form.
-
