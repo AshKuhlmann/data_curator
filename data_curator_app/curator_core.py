@@ -13,13 +13,27 @@ import json
 import subprocess
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+import fnmatch
 
 # The name of the state file, which will be stored in the curated repository.
 # Using a leading dot makes it a hidden file on Unix-like systems.
 STATE_FILENAME = ".curator_state.json"
+# Backup file name used to recover from partial or corrupt writes.
+STATE_BACKUP_FILENAME = f"{STATE_FILENAME}.bak"
 
 # The name of the directory used to store deleted files, acting as a local trash.
 TRASH_DIR_NAME = ".curator_trash"
+
+
+def _load_state_file(path: str) -> Optional[Dict[str, Any]]:
+    """Internal helper to load a state file, returning None on failure."""
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return None
 
 
 def load_state(repository_path: str) -> Dict[str, Any]:
@@ -37,14 +51,17 @@ def load_state(repository_path: str) -> Dict[str, Any]:
         such as status, tags, and timestamps.
     """
     state_filepath = os.path.join(repository_path, STATE_FILENAME)
-    if not os.path.exists(state_filepath):
-        return {}
-    try:
-        with open(state_filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        # If the file is corrupted or unreadable, return an empty state to prevent crashing.
-        return {}
+    backup_filepath = os.path.join(repository_path, STATE_BACKUP_FILENAME)
+    # Try primary first
+    primary = _load_state_file(state_filepath)
+    if primary is not None:
+        return primary
+    # Fall back to backup if available and valid
+    backup = _load_state_file(backup_filepath)
+    if backup is not None:
+        return backup
+    # Default to empty state
+    return {}
 
 
 def save_state(repository_path: str, state: Dict[str, Any]) -> None:
@@ -58,8 +75,47 @@ def save_state(repository_path: str, state: Dict[str, Any]) -> None:
         state: The dictionary containing the current state to be saved.
     """
     state_filepath = os.path.join(repository_path, STATE_FILENAME)
-    with open(state_filepath, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=4)
+    backup_filepath = os.path.join(repository_path, STATE_BACKUP_FILENAME)
+
+    # Ensure repository_path exists (os.replace requires same directory for atomicity)
+    # Write to a temporary file in the same directory, then atomically replace the state file.
+    tmp_path = f"{state_filepath}.tmp-{os.getpid()}-{abs(hash(id(state)))}"
+    # Serialize first to avoid partial writes from json.dump exceptions
+    payload = json.dumps(state, indent=4)
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.write(payload)
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            # Not all filesystems support fsync; ignore if unavailable
+            pass
+
+    # If a current state exists, move it to backup before installing the new file.
+    if os.path.exists(state_filepath):
+        try:
+            os.replace(state_filepath, backup_filepath)
+        except OSError:
+            # Fallback to a non-atomic copy if rename fails (e.g., cross-fs oddities)
+            try:
+                import shutil
+
+                shutil.copyfile(state_filepath, backup_filepath)
+            except Exception:
+                # Proceed without blocking the update.
+                pass
+    # Atomically replace the state file with the new temp file.
+    os.replace(tmp_path, state_filepath)
+    # Best-effort: fsync the directory to persist rename operations.
+    try:
+        dir_fd = os.open(repository_path, os.O_DIRECTORY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except Exception:
+        # Ignore on platforms/filesystems where this isn't supported.
+        pass
 
 
 def scan_directory(
@@ -67,6 +123,10 @@ def scan_directory(
     filter_term: Optional[str] = None,
     sort_by: str = "name",
     sort_order: str = "asc",
+    recursive: bool = False,
+    include_patterns: Optional[List[str]] = None,
+    exclude_patterns: Optional[List[str]] = None,
+    ignore_filename: str = ".curatorignore",
 ) -> List[str]:
     """
     Scans a directory for files that need review, with sorting options.
@@ -85,11 +145,99 @@ def scan_directory(
         A list of filenames that are pending review, sorted as requested.
     """
     curation_state = load_state(directory_path)
-    all_files_in_directory = [
-        f
-        for f in os.listdir(directory_path)
-        if os.path.isfile(os.path.join(directory_path, f)) and not f.startswith(".")
-    ]
+
+    # Load ignore patterns from .curatorignore if present.
+    ignore_patterns: List[str] = []
+    ignore_path = os.path.join(directory_path, ignore_filename)
+    if os.path.exists(ignore_path):
+        try:
+            with open(ignore_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    ignore_patterns.append(line)
+        except IOError:
+            pass
+
+    def _norm_path(s: str) -> str:
+        return s.replace(os.sep, "/").casefold()
+
+    def _norm_pat(pat: str) -> str:
+        pat = pat.lstrip("/")  # treat leading '/' as repo-root
+        return pat.replace(os.sep, "/").casefold()
+
+    def is_ignored(relpath: str) -> bool:
+        # Apply explicit exclude patterns first, then ignore file patterns.
+        rel_cf = _norm_path(relpath)
+        base_cf = os.path.basename(relpath).casefold()
+        if exclude_patterns:
+            for pat in exclude_patterns:
+                p = _norm_pat(pat)
+                if "/" in p:
+                    if fnmatch.fnmatch(rel_cf, p):
+                        return True
+                    if p.startswith("**/") and fnmatch.fnmatch(base_cf, p[3:]):
+                        return True
+                else:
+                    if fnmatch.fnmatch(base_cf, p):
+                        return True
+        for pat in ignore_patterns:
+            p = _norm_pat(pat)
+            if "/" in p:
+                if fnmatch.fnmatch(rel_cf, p):
+                    return True
+                if p.startswith("**/") and fnmatch.fnmatch(base_cf, p[3:]):
+                    return True
+            else:
+                if fnmatch.fnmatch(base_cf, p):
+                    return True
+        return False
+
+    def is_included(relpath: str) -> bool:
+        if include_patterns:
+            rel_cf = _norm_path(relpath)
+            base_cf = os.path.basename(relpath).casefold()
+            for pat in include_patterns:
+                p = _norm_pat(pat)
+                if "/" in p:
+                    if fnmatch.fnmatch(rel_cf, p):
+                        return True
+                    # Treat leading "**/" as matching basename of files in any folder
+                    if p.startswith("**/") and fnmatch.fnmatch(base_cf, p[3:]):
+                        return True
+                else:
+                    if fnmatch.fnmatch(base_cf, p):
+                        return True
+            return False
+        return True
+
+    all_files_in_directory: List[str] = []
+    if recursive:
+        for root, dirs, files in os.walk(directory_path):
+            # Skip hidden directories
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for name in files:
+                if name.startswith("."):
+                    continue
+                full = os.path.join(root, name)
+                rel = os.path.relpath(full, directory_path)
+                # Normalize relpath to use '/' consistently
+                rel_norm = rel.replace(os.sep, "/")
+                if is_ignored(rel_norm) or not is_included(rel_norm):
+                    continue
+                if os.path.isfile(full):
+                    all_files_in_directory.append(rel_norm)
+    else:
+        for name in os.listdir(directory_path):
+            if name.startswith("."):
+                continue
+            full = os.path.join(directory_path, name)
+            if os.path.isfile(full):
+                rel_norm = name
+                if is_ignored(rel_norm) or not is_included(rel_norm):
+                    continue
+                all_files_in_directory.append(rel_norm)
 
     # Identify files that have already been assigned a permanent status.
     processed_files = set()
@@ -124,7 +272,7 @@ def scan_directory(
             return os.path.getmtime(os.path.join(directory_path, filename))
         if sort_by == "size":
             return os.path.getsize(os.path.join(directory_path, filename))
-        return filename.lower()
+        return filename.casefold()
 
     return sorted(files_to_review, key=sort_key, reverse=reverse_order)
 
@@ -162,7 +310,7 @@ def update_file_status(
 
     # Update metadata.
     state[filename]["status"] = status
-    state[filename]["last_updated"] = datetime.now().isoformat()
+    state[filename]["last_updated"] = datetime.now().astimezone().isoformat()
 
     # If the status is temporary, calculate and store the expiry date.
     if status == "keep_90_days":
@@ -244,12 +392,14 @@ def rename_file(old_filepath: str, new_filename: str) -> Optional[Dict[str, Any]
         if old_filename in state:
             state[new_filename] = state.pop(old_filename)
             state[new_filename]["status"] = "renamed"
-            state[new_filename]["last_updated"] = datetime.now().isoformat()
+            state[new_filename]["last_updated"] = (
+                datetime.now().astimezone().isoformat()
+            )
         else:
             # If not tracked, create a new entry.
             state[new_filename] = {
                 "status": "renamed",
-                "last_updated": datetime.now().isoformat(),
+                "last_updated": datetime.now().astimezone().isoformat(),
             }
 
         save_state(directory, state)
@@ -259,6 +409,17 @@ def rename_file(old_filepath: str, new_filename: str) -> Optional[Dict[str, Any]
     except OSError as e:
         print(f"Error renaming file: {e}")
         return None
+
+
+def _unique_path(path: str) -> str:
+    """Generate a unique path by appending ' (n)' before the extension if needed."""
+    base, ext = os.path.splitext(path)
+    candidate = path
+    n = 1
+    while os.path.exists(candidate):
+        candidate = f"{base} ({n}){ext}"
+        n += 1
+    return candidate
 
 
 def delete_file(filepath: str) -> Optional[Dict[str, Any]]:
@@ -281,6 +442,7 @@ def delete_file(filepath: str) -> Optional[Dict[str, Any]]:
     try:
         os.makedirs(trash_directory, exist_ok=True)
         new_filepath = os.path.join(trash_directory, filename)
+        new_filepath = _unique_path(new_filepath)
         os.rename(filepath, new_filepath)
 
         update_file_status(directory, filename, "deleted")
@@ -322,6 +484,34 @@ def undo_delete(last_action: Dict[str, Any]) -> bool:
     except OSError as e:
         print(f"Error restoring file from trash: {e}")
         return False
+
+
+def reset_expired_to_decide_later(repository_path: str) -> List[str]:
+    """
+    Resets all expired 'keep_90_days' items to 'decide_later'.
+
+    Returns a list of filenames that were updated.
+    """
+    state = load_state(repository_path)
+    updated: List[str] = []
+    now = datetime.now()
+    for filename, metadata in list(state.items()):
+        if metadata.get("status") == "keep_90_days":
+            expiry = metadata.get("expiry_date")
+            if not expiry:
+                continue
+            try:
+                dt = datetime.fromisoformat(expiry)
+            except ValueError:
+                continue
+            if dt < now:
+                metadata["status"] = "decide_later"
+                metadata.pop("expiry_date", None)
+                metadata["last_updated"] = datetime.now().astimezone().isoformat()
+                updated.append(filename)
+    if updated:
+        save_state(repository_path, state)
+    return updated
 
 
 def open_file_location(filepath: str) -> None:
@@ -373,3 +563,38 @@ def check_for_expired_files(repository_path: str) -> List[str]:
                     print(f"Warning: Invalid date format for '{filename}'")
 
     return expired_files
+
+
+def get_expired_details(repository_path: str) -> List[Dict[str, Any]]:
+    """
+    Returns detailed information for each expired temporary keep item.
+
+    Each entry includes: filename, status, expiry_date, expired flag, and
+    days_overdue (integer days the item is past expiry).
+    """
+    state = load_state(repository_path)
+    details: List[Dict[str, Any]] = []
+    now = datetime.now()
+    for filename, metadata in list(state.items()):
+        if metadata.get("status") != "keep_90_days":
+            continue
+        expiry_date_str = metadata.get("expiry_date")
+        if not expiry_date_str:
+            continue
+        try:
+            expiry_dt = datetime.fromisoformat(expiry_date_str)
+        except ValueError:
+            # Skip invalid dates; check_for_expired_files prints a warning already.
+            continue
+        if expiry_dt < now:
+            days_overdue = max(0, (now - expiry_dt).days)
+            details.append(
+                {
+                    "filename": filename,
+                    "status": "keep_90_days",
+                    "expiry_date": expiry_date_str,
+                    "expired": True,
+                    "days_overdue": days_overdue,
+                }
+            )
+    return details
