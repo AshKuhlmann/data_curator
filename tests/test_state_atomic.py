@@ -30,20 +30,35 @@ def test_save_state_creates_and_rotates_backup(tmp_path: Path):
     save_state(str(repo), {"a.txt": {"status": "decide_later"}})
     assert state_path.exists()
     assert not bak_path.exists()
-    assert read_json(state_path) == {"a.txt": {"status": "decide_later"}}
+    assert read_json(state_path) == {
+        "_schema_version": 1,
+        "a.txt": {"status": "decide_later"},
+    }
 
     # Second save should rotate previous state into backup
     save_state(str(repo), {"a.txt": {"status": "keep_forever"}})
     assert state_path.exists()
     assert bak_path.exists()
-    assert read_json(state_path) == {"a.txt": {"status": "keep_forever"}}
-    assert read_json(bak_path) == {"a.txt": {"status": "decide_later"}}
+    assert read_json(state_path) == {
+        "_schema_version": 1,
+        "a.txt": {"status": "keep_forever"},
+    }
+    assert read_json(bak_path) == {
+        "_schema_version": 1,
+        "a.txt": {"status": "decide_later"},
+    }
 
     # Third save rotates backup again
     save_state(str(repo), {"b.txt": {"status": "decide_later"}})
-    assert read_json(state_path) == {"b.txt": {"status": "decide_later"}}
+    assert read_json(state_path) == {
+        "_schema_version": 1,
+        "b.txt": {"status": "decide_later"},
+    }
     # Backup now contains the immediate previous state
-    assert read_json(bak_path) == {"a.txt": {"status": "keep_forever"}}
+    assert read_json(bak_path) == {
+        "_schema_version": 1,
+        "a.txt": {"status": "keep_forever"},
+    }
 
 
 def test_load_state_recovers_from_corrupt_primary_using_backup(tmp_path: Path):
@@ -62,7 +77,7 @@ def test_load_state_recovers_from_corrupt_primary_using_backup(tmp_path: Path):
 
     # load_state should fall back to backup
     recovered = load_state(str(repo))
-    assert recovered == {"v1.txt": {"status": "decide_later"}}
+    assert recovered == {"_schema_version": 1, "v1.txt": {"status": "decide_later"}}
 
 
 def test_load_state_when_primary_missing_uses_backup(tmp_path: Path):
@@ -79,7 +94,7 @@ def test_load_state_when_primary_missing_uses_backup(tmp_path: Path):
     os.remove(state_path)
     # load_state should return backup
     recovered = load_state(str(repo))
-    assert recovered == {"first": {"status": "decide_later"}}
+    assert recovered == {"_schema_version": 1, "first": {"status": "decide_later"}}
 
 
 # ruff: noqa: E402
