@@ -31,9 +31,11 @@ def test_concurrent_writers_preserve_all_updates(tmp_path: Path):
 
     # State should contain all distinct entries without being clobbered
     state = core.load_state(str(repo))
-    assert len(state) == 8
+    # Exclude reserved keys
+    file_keys = [k for k in state.keys() if not str(k).startswith("_")]
+    assert len(file_keys) == 8
     for i in range(8):
-        assert f"f{i}.txt" in state
+        assert f"f{i}.txt" in file_keys
 
 
 def test_lockfile_created_and_reused(tmp_path: Path):
@@ -46,4 +48,5 @@ def test_lockfile_created_and_reused(tmp_path: Path):
     # A second write should succeed and not hang
     core.update_file_status(str(repo), "b.txt", "decide_later")
     state = core.load_state(str(repo))
-    assert set(state.keys()) == {"a.txt", "b.txt"}
+    file_keys = {k for k in state.keys() if not str(k).startswith("_")}
+    assert file_keys == {"a.txt", "b.txt"}
