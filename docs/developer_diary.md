@@ -15,6 +15,9 @@
   - [ ] On load, if `_schema_version` missing/older, migrate in‑memory and save.
 - [ ] `open_file_location()` platform probe: current `elif os.uname().sysname == "Darwin"` is fine on POSIX, but `os.uname()` is not available on Windows. Since code already gates on `os.name == "nt"`, this is safe. Consider `sys.platform.startswith("darwin")` for clarity and to avoid `os.uname` import constraints in exotic runtimes.
 
+- [ ] Standardize handler error reporting: when core ops fail (`rename`, `delete`, `restore`), emit structured JSON errors and proper exit codes consistently (not just `print`).
+- [ ] Persist last action metadata (rename/delete contexts) in state to support a future `undo` command.
+
 ### UX & CLI
 - [ ] Repository arg ergonomics:
   - [ ] Make `repository_path` optional (default to `.`) and add `-C/--repo PATH` that can be repeated (last wins) like Git.
@@ -23,13 +26,19 @@
   - [ ] Keep `--json` stable shapes; already includes `filtered_total` and `raw_total`. Document stable contracts and add a `version` field in JSON envelopes for future changes.
   - [ ] Add `--quiet` to more commands where user‑facing prints may appear (consistency audit).
   - [ ] Add `--color/--no-color` toggle (no-op for JSON) to improve TTY UX.
+
+  - [ ] Ensure stdout vs stderr separation: data to stdout; human/logs to stderr; JSON mode writes only JSON to stdout.
 - [ ] Sorting & filtering:
   - [ ] Natural sort option (`--natural`) for humanized name sorting when not using size/date.
   - [ ] Add `--filter-tag TAG` to filter by exact tag and `--filter-regex` to complement substring search.
   - [ ] Support `--since/--until` filters for mtime ranges.
+
+  - [ ] Support `--sort-by created|accessed` where available; degrade gracefully when unsupported.
 - [ ] Scanning controls:
   - [ ] `.curatorignore` is supported; document pattern semantics (path vs basename, `**/` behavior) with examples and tests.
   - [ ] Consider `--hidden` to include dotfiles; currently hidden files/dirs are skipped.
+
+  - [ ] Add `--exclude-dir DIR` (repeatable) to skip whole directories without requiring complex globs.
 - [ ] Status semantics:
   - [ ] `keep_90_days` correctly maps to `keep` with `days=90`. Mark `keep_90_days` as deprecated in docs; emit a warning when used.
   - [ ] Permit explicit `--until YYYY-MM-DD` in addition to `--days` for `keep`.
@@ -44,6 +53,13 @@
   - [ ] Add examples for every subcommand in `argparse` epilog.
   - [ ] Provide shell completion stubs (bash/zsh/fish) via `argcomplete` or static generation.
 
+- [ ] Validate `status` values against an allowed set; reject unknown values with exit code 3 and JSON error.
+- [ ] Add `open`/`reveal` command to expose `open_file_location()` for convenience.
+- [ ] Add trash management: `trash list`, `trash prune --older N`, and `restore --all` commands.
+- [ ] Add `list --status <status>` to list curated items (not just pending) and support status filtering.
+- [ ] Add `init` command to create a baseline `.curatorignore` and recommended `.gitignore` entries.
+- [ ] Audit and document exit code semantics across all commands; ensure consistent 0/1/2/3 usage.
+
 ### Data Integrity & Concurrency
 - [ ] State locking: cross‑platform lock file is good. Add:
   - [ ] Lock acquisition timeout (env or flag) with friendly error when another process holds the lock.
@@ -54,11 +70,16 @@
 - [ ] Backups:
   - [ ] Rotate `.curator_state.json.bak.N` with cap (e.g., last 3 writes) to increase recovery options.
 
+- [ ] Configurable state and trash locations via config/env (e.g., `.data_curator/` root); provide migration helpers.
+- [ ] State import/export commands to move state between machines; add `state diff` between backups.
+
 ### Performance & Scalability
 - [ ] Use `os.scandir()` when gathering stats for `date/size` sorts to avoid repeated syscalls.
 - [ ] Paginate at the scan source (yield and stop at `limit`) to avoid building large lists first.
 - [ ] Consider caching stat results during a single command run; invalidate by mtime.
 - [ ] For very large repos, add a `--progress` counter and optional rate‑limited progress prints.
+
+- [ ] Add `--json-lines` streaming output for `scan/sort` to avoid buffering entire result sets.
 
 ### Rules Engine
 - [ ] CLI coverage already present (dry‑run/apply). Expand capabilities:
@@ -69,6 +90,10 @@
   - [ ] Dry‑run output should include the would‑be destination paths.
   - [ ] Add rule validation command `rules validate` with schema errors surfaced.
 
+  - [ ] Add `rules test --file <path>` to show the first matching rule/action for a single file.
+  - [ ] Add `rules metrics` to summarize matches per rule for tuning.
+  - [ ] Define and enforce a JSON Schema for rules; validate on load with detailed error locations.
+
 ### Testing
 - [ ] Add E2E tests for the trash/restore mismatch to prevent regressions.
 - [ ] Tests for `.curatorignore` path patterns vs basename patterns, including `**/` behavior.
@@ -78,12 +103,25 @@
 - [ ] Migration tests: start from older schema snapshots, run load+migrate, assert final state.
 - [ ] JSON contract tests: golden samples for `scan/sort/expired` with paging and filters.
 
+- [ ] Measure coverage and enforce a CI threshold (e.g., 90%); produce local HTML reports.
+- [ ] Verify clean stdout/stderr separation across commands and modes.
+- [ ] Handle KeyboardInterrupt gracefully; ensure no partial state writes; add tests.
+- [ ] Multi-process lock contention test to complement unit locking checks.
+- [ ] Golden-file tests for CLI help/usage to catch accidental regressions.
+- [ ] Exit code consistency tests for all commands (success, invalid input, not found).
+
 ### Documentation
 - [ ] Expand README quickstart with a minimal workflow: scan → decide → tag → delete/restore → expired reset.
 - [ ] Document state JSON shape and schema version, including `keep_days`, `expiry_date`, and timezone semantics.
 - [ ] Dedicated page for ignore patterns with concrete examples and gotchas.
 - [ ] Troubleshooting page for common errors (permission denied, lock held, path not found) and how to recover.
 - [ ] Contributing: note required Python version, Poetry usage, and the local pre‑commit workflow.
+
+- [ ] Full workflow walkthrough in README: scan → decide → tag → delete → restore → expired reset.
+- [ ] “Statuses and lifecycle” page/section explaining how each status appears in scans.
+- [ ] Dedicated “Trash Management” page (list, prune, restore behavior, collision strategy, locations).
+- [ ] “Configuration” page: defaults, config files, env vars, recommended `.gitignore` entries.
+- [ ] Add a short “Glossary” of core terms (repository, state, trash, expired, rules).
 
 ### Developer Experience & Tooling
 - [ ] Logging: replace `print` with `logging` and a `--log-level` flag; ensure JSON mode remains clean (no extra logs to stdout).
@@ -92,10 +130,28 @@
 - [ ] Pre-commit hook (git) to run formatters quickly on changed files; current `scripts/pre-commit` is a good CI gate.
 - [ ] Add `make` targets or `task` runner equivalents (`make test`, `make lint`, `make fmt`).
 
+- [ ] Publish `py.typed` to mark the package as typed for downstream projects.
+- [ ] Enrich `pyproject.toml`: add `project.urls`, classifiers, keywords, license metadata, and long description.
+- [ ] Centralize tool config in `pyproject.toml` (`tool.ruff`, `tool.black`, `tool.mypy`), including excludes.
+- [ ] Document and support `pipx install data-curator` for safe CLI installs.
+- [ ] Offer optional extras (e.g., `tui`) for future UI dependencies.
+
+### CI/CD
+- [ ] Expand CI matrix to Python 3.11–3.13 across Ubuntu/macOS/Windows; cache Poetry and wheels.
+- [ ] Add `poetry lock --check` step to keep lockfile in sync.
+- [ ] Enable workflow concurrency to cancel superseded runs.
+- [ ] Release pipeline: tag → build sdist/wheel → publish to PyPI (with provenance where possible).
+- [ ] Integrate coverage reporting in PRs (Codecov/Coveralls) with status checks.
+
 ### Platform Compatibility
 - [ ] Filesystems: ensure behavior on case‑insensitive FS (macOS default) is well‑tested. Consider case‑folded comparisons already used in scanning logic; document implications.
 - [ ] Unicode: add tests for NFC/NFD normalization (macOS) and ensure tags/filenames round‑trip as expected.
 - [ ] Large files: exercise size sort and operations on multi‑GiB files (stat only).
+
+- [ ] Windows long-path guidance (opt-in `\\?\\` prefix) and tests where feasible.
+- [ ] Document behavior/limitations on network shares (SMB/NFS) for locks.
+- [ ] Large-directory stress tests (100k+ files) and doc guidance for paging and JSON-lines.
+- [ ] Verify macOS unicode normalization (NFD) handling for filenames; ensure round-trip on rename/tag.
 
 ### Backward Compatibility & Migrations
 - [ ] Maintain compatibility for older states (no `_schema_version`), migrate forward on write.
