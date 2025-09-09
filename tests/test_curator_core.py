@@ -11,11 +11,17 @@ def test_load_state_nonexistent(tmp_path):
 
 def test_save_and_load_state(tmp_path):
     repo_path = str(tmp_path)
-    data = {"file.txt": {"status": "keep_forever"}}
-    core.save_state(repo_path, data)
+    initial = {"file.txt": {"status": "keep_forever"}}
+    core.save_state(repo_path, dict(initial))
     state_file = tmp_path / core.STATE_FILENAME
-    assert json.loads(state_file.read_text()) == data
-    assert core.load_state(repo_path) == data
+    on_disk = json.loads(state_file.read_text())
+    assert on_disk.get("_schema_version") == 1
+    on_disk.pop("_schema_version", None)
+    assert on_disk == initial
+    loaded = core.load_state(repo_path)
+    assert loaded.get("_schema_version") == 1
+    loaded.pop("_schema_version", None)
+    assert loaded == initial
 
 
 def test_scan_directory_filters_processed(tmp_path):

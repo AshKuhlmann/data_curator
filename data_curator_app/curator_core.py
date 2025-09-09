@@ -20,6 +20,8 @@ import shutil
 # The name of the state file, which will be stored in the curated repository.
 # Using a leading dot makes it a hidden file on Unix-like systems.
 STATE_FILENAME = ".curator_state.json"
+# State schema version for forward migrations
+SCHEMA_VERSION = 1
 # Backup file name used to recover from partial or corrupt writes.
 STATE_BACKUP_FILENAME = f"{STATE_FILENAME}.bak"
 # A separate lockfile used to coordinate concurrent writers across processes.
@@ -143,6 +145,13 @@ def _save_state_unlocked(repository_path: str, state: Dict[str, Any]) -> None:
     # Ensure repository_path exists (os.replace requires same directory for atomicity)
     # Write to a temporary file in the same directory, then atomically replace the state file.
     tmp_path = f"{state_filepath}.tmp-{os.getpid()}-{abs(hash(id(state)))}"
+    # Ensure schema version is present and up-to-date before serialization
+    try:
+        state["_schema_version"] = SCHEMA_VERSION
+    except Exception:
+        # If state is not a dict for some reason, replace with minimal dict
+        state = {"_schema_version": SCHEMA_VERSION}
+
     # Serialize first to avoid partial writes from json.dump exceptions
     payload = json.dumps(state, indent=4)
     with open(tmp_path, "w", encoding="utf-8") as f:
@@ -652,6 +661,8 @@ def reset_expired_to_decide_later(repository_path: str) -> List[str]:
         updated: List[str] = []
     now = datetime.now()
     for filename, metadata in list(state.items()):
+        if not isinstance(metadata, dict):
+            continue
         status = metadata.get("status")
         if status not in ("keep", "keep_90_days"):
             continue
@@ -710,6 +721,8 @@ def check_for_expired_files(repository_path: str) -> List[str]:
 
     # Iterate over a copy of the items to avoid issues with potential modifications.
     for filename, metadata in list(state.items()):
+        if not isinstance(metadata, dict):
+            continue
         if metadata.get("status") in ("keep", "keep_90_days"):
             expiry_date_str = metadata.get("expiry_date")
             if expiry_date_str:
@@ -735,6 +748,8 @@ def get_expired_details(repository_path: str) -> List[Dict[str, Any]]:
     details: List[Dict[str, Any]] = []
     now = datetime.now()
     for filename, metadata in list(state.items()):
+        if not isinstance(metadata, dict):
+            continue
         if metadata.get("status") not in ("keep", "keep_90_days"):
             continue
         expiry_date_str = metadata.get("expiry_date")

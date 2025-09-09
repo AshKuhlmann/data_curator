@@ -7,7 +7,7 @@ This document explains how the repository is organized, how the main parts work 
 - Purpose: CLI tool to curate files in a folder one-at-a-time, tracking decisions in a local JSON state file so sessions can resume seamlessly.
 - Interface: CLI (argparse).
 - Core: Pure functions that manage on-disk state and file operations, used by the CLI.
-- State: Each curated folder contains a `.curator_state.json` and an optional `.curator_trash/` directory.
+- State: Each curated folder contains a `.curator_state.json` and an optional `.curator_trash/` directory. See `docs/SCHEMA.md` for the state file schema (includes a reserved `_schema_version` root key).
 
 Requires Python `>= 3.11`. Managed with Poetry.
 
@@ -70,7 +70,8 @@ Common files created in curated folders:
 
 ## Data and Conventions
 
-- Status values: `keep_forever`, `keep_90_days` (adds `expiry_date`), `decide_later`, `deleted`, `renamed`.
+- State schema: documented in `docs/SCHEMA.md`; the top-level `_schema_version` key is reserved for metadata.
+- Status values: `keep_forever`, `keep` (adds `expiry_date`), `decide_later`, `deleted`, `renamed`. Legacy `keep_90_days` is accepted for backward compatibility.
 - Tagging: Stored per-filename array in state; used for filtering and display.
 - Sorting: `name` (casefold), `date` (mtime), `size` (bytes).
 - Ignore behavior:
