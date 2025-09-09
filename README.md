@@ -10,6 +10,28 @@ Data Curator is a command‑line tool for curating files in a folder one at a ti
 - JSON output: scriptable results for `scan`, `sort`, and `expired`.
 - Batch modes: update many files via file/stdin lists.
 
+## Project Structure
+
+The repository is organized to keep core logic separate from the CLI and tests:
+
+- `data_curator_app/`
+  - `curator_core.py`: state, scanning, tagging, file ops (rename/delete/restore), expired handling
+  - `cli.py`: argument parsing and command handlers for the CLI
+  - `rules_engine.py`: simple rule evaluation on file attributes
+- `docs/`
+  - `PROJECT_STRUCTURE.md`: deeper overview of components and flow
+  - `SCHEMA.md`: notes on state structure and versioning
+  - `developer_diary.md`: dated, actionable improvement checklist
+- `scripts/pre-commit`: local CI gate (format/lint/type/test/install)
+- `tests/`: pytest suite for core and CLI
+- `pyproject.toml` / `poetry.lock`: project metadata and dev tool config
+
+Common files created in curated folders:
+
+- `.curator_state.json`: per-repo state (status, tags, timestamps, optional expiry)
+- `.curator_trash/`: safe “trash” for soft-deletes
+- `.curatorignore` (optional): ignore patterns for scans
+
 ## Installation
 
 ### Running from source
@@ -93,6 +115,12 @@ Basic examples:
 
   `data-curator /path/to/repo restore myfile.txt`
 
+- List and empty trash contents:
+
+  `data-curator /path/to/repo trash-list --json`
+
+  `data-curator /path/to/repo trash-empty --yes --json`
+
 - Update status and tags (with existence check bypass):
 
   `data-curator /path/to/repo status notes.txt keep_forever --force`
@@ -132,6 +160,7 @@ Flags worth noting:
 - `--yes`: Skip delete confirmation prompts.
 - `--force`: Allow state updates even if the file does not exist.
 - `--quiet`: Reduce non-essential output.
+- `--include-expired`: Include expired temporary keeps in scans.
 
 ## Exit Codes and JSON Errors
 
@@ -149,3 +178,26 @@ Notes:
 - Batch commands return aggregated JSON with per-item results; any per-item failure sets the process exit code to 2. Example shape:
 
 `{ "results": [ {"filename": "a.txt", "result": "updated"}, {"filename": "missing.txt", "error": "...", "code": 2 } ], "updated": 1, "failed": 1 }`
+
+## Future Work
+
+Planned enhancements and areas under consideration (see `docs/developer_diary.md` for the detailed checklist):
+
+- CLI/UX
+  - `open`/`reveal` command to show a file in the system file explorer
+  - Status validation with helpful errors; `list --status <status>` for curated items
+  - `--exclude-dir` convenience, `--sort-by created|accessed` (platform-aware)
+  - Streaming `--json-lines` output for large scans; improved stdout/stderr hygiene
+  - `init` command for baseline `.curatorignore` and `.gitignore` entries
+- Rules Engine
+  - `rules test --file` for per-file evaluation; `rules metrics` summaries
+  - JSON Schema validation for rules with detailed error locations
+- State/Trash
+  - Configurable state/trash locations and import/export/diff utilities
+- Testing & Quality Gates
+  - Coverage gating; exit code consistency tests; multi-process lock contention tests
+- Packaging & CI/CD
+  - `pipx` install path, typed package (`py.typed`), enriched metadata
+  - Release pipeline to PyPI and wider CI matrix (Ubuntu/macOS/Windows, Python 3.11–3.13)
+- Platform
+  - Windows long-path guidance, SMB/NFS lock notes, macOS Unicode normalization tests
