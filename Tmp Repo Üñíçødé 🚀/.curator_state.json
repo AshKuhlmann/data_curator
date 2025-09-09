@@ -1,0 +1,13 @@
+{
+    "does_not_exist.txt": {
+        "tags": [],
+        "status": "keep_forever",
+        "last_updated": "2025-08-19T12:30:31.694485"
+    },
+    "unicod\u00e9\ud83d\udd25.txt": {
+        "tags": [
+            "multi word",
+            "caf\u00e9"
+        ]
+    }
+}

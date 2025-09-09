@@ -85,9 +85,12 @@ def test_main_scan_command(mock_main_handlers, monkeypatch):
         ],
     )
     cli.main()
-    mock_main_handlers["scan"].assert_called_once_with(
-        "/tmp/repo", filter_term="term", sort_by="date", sort_order="desc"
-    )
+    mock_main_handlers["scan"].assert_called_once()
+    args, kwargs = mock_main_handlers["scan"].call_args
+    assert args[0] == "/tmp/repo"
+    assert kwargs["filter_term"] == "term"
+    assert kwargs["sort_by"] == "date"
+    assert kwargs["sort_order"] == "desc"
 
 
 def test_main_sort_command(mock_main_handlers, monkeypatch):
@@ -96,9 +99,11 @@ def test_main_sort_command(mock_main_handlers, monkeypatch):
         "sys.argv", ["cli.py", "/tmp/repo", "sort", "size", "--order", "desc"]
     )
     cli.main()
-    mock_main_handlers["sort"].assert_called_once_with(
-        "/tmp/repo", sort_by="size", sort_order="desc"
-    )
+    mock_main_handlers["sort"].assert_called_once()
+    args, kwargs = mock_main_handlers["sort"].call_args
+    assert args[0] == "/tmp/repo"
+    assert kwargs["sort_by"] == "size"
+    assert kwargs["sort_order"] == "desc"
 
 
 def test_main_status_command(mock_main_handlers, monkeypatch):
@@ -108,9 +113,11 @@ def test_main_status_command(mock_main_handlers, monkeypatch):
         ["cli.py", "/tmp/repo", "status", "file.txt", "keep_forever"],
     )
     cli.main()
-    mock_main_handlers["status"].assert_called_once_with(
-        "/tmp/repo", "file.txt", "keep_forever"
-    )
+    mock_main_handlers["status"].assert_called_once()
+    args, kwargs = mock_main_handlers["status"].call_args
+    assert args[0] == "/tmp/repo"
+    assert args[1] == "file.txt"
+    assert args[2] == "keep_forever"
 
 
 def test_main_tag_command(mock_main_handlers, monkeypatch):
@@ -120,9 +127,12 @@ def test_main_tag_command(mock_main_handlers, monkeypatch):
         ["cli.py", "/tmp/repo", "tag", "file.txt", "--add", "a", "b", "--remove", "c"],
     )
     cli.main()
-    mock_main_handlers["tag"].assert_called_once_with(
-        "/tmp/repo", "file.txt", tags_to_add=["a", "b"], tags_to_remove=["c"]
-    )
+    mock_main_handlers["tag"].assert_called_once()
+    args, kwargs = mock_main_handlers["tag"].call_args
+    assert args[0] == "/tmp/repo"
+    assert args[1] == "file.txt"
+    assert kwargs["tags_to_add"] == ["a", "b"]
+    assert kwargs["tags_to_remove"] == ["c"]
 
 
 def test_main_rename_command(mock_main_handlers, monkeypatch):
@@ -131,20 +141,27 @@ def test_main_rename_command(mock_main_handlers, monkeypatch):
         "sys.argv", ["cli.py", "/tmp/repo", "rename", "old.txt", "new.txt"]
     )
     cli.main()
-    mock_main_handlers["rename"].assert_called_once_with(
-        "/tmp/repo", "old.txt", "new.txt"
-    )
+    mock_main_handlers["rename"].assert_called_once()
+    args, kwargs = mock_main_handlers["rename"].call_args
+    assert args[0] == "/tmp/repo"
+    assert args[1] == "old.txt"
+    assert args[2] == "new.txt"
 
 
 def test_main_delete_command(mock_main_handlers, monkeypatch):
     """Test that the main function correctly dispatches the delete command."""
     monkeypatch.setattr("sys.argv", ["cli.py", "/tmp/repo", "delete", "file.txt"])
     cli.main()
-    mock_main_handlers["delete"].assert_called_once_with("/tmp/repo", "file.txt")
+    mock_main_handlers["delete"].assert_called_once()
+    args, kwargs = mock_main_handlers["delete"].call_args
+    assert args[0] == "/tmp/repo"
+    assert args[1] == "file.txt"
 
 
 def test_main_expired_command(mock_main_handlers, monkeypatch):
     """Test that the main function correctly dispatches the expired command."""
     monkeypatch.setattr("sys.argv", ["cli.py", "/tmp/repo", "expired"])
     cli.main()
-    mock_main_handlers["expired"].assert_called_once_with("/tmp/repo")
+    mock_main_handlers["expired"].assert_called_once()
+    args, kwargs = mock_main_handlers["expired"].call_args
+    assert args[0] == "/tmp/repo"
