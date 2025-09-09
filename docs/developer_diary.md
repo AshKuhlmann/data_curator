@@ -53,7 +53,7 @@
   - [ ] Add examples for every subcommand in `argparse` epilog.
   - [ ] Provide shell completion stubs (bash/zsh/fish) via `argcomplete` or static generation.
 
-- [ ] Validate `status` values against an allowed set; reject unknown values with exit code 3 and JSON error.
+- [x] Validate `status` values against an allowed set; reject unknown values with exit code 3 and JSON error.
 - [ ] Add `open`/`reveal` command to expose `open_file_location()` for convenience.
 - [ ] Add trash management: `trash list`, `trash prune --older N`, and `restore --all` commands.
 - [ ] Add `list --status <status>` to list curated items (not just pending) and support status filtering.

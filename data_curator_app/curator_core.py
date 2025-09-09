@@ -89,6 +89,13 @@ def _state_file_lock(repository_path: str):
 # The name of the directory used to store deleted files, acting as a local trash.
 TRASH_DIR_NAME = ".curator_trash"
 
+# Public/user-facing statuses accepted from the CLI
+USER_ALLOWED_STATUSES = {"keep_forever", "keep", "decide_later"}
+# Internal statuses used by core operations
+_INTERNAL_ONLY_STATUSES = {"deleted", "renamed"}
+# All statuses the state machine may contain
+ALLOWED_STATUSES = USER_ALLOWED_STATUSES | _INTERNAL_ONLY_STATUSES
+
 
 def _load_state_file(path: str) -> Optional[Dict[str, Any]]:
     """Internal helper to load a state file, returning None on failure."""
@@ -414,6 +421,12 @@ def update_file_status(
         if status == "keep_90_days":
             effective_status = "keep"
             effective_days = 90
+
+        # Validate status against allowed set after legacy mapping
+        if effective_status not in ALLOWED_STATUSES:
+            raise ValueError(
+                f"Invalid status '{status}'. Allowed: {sorted(USER_ALLOWED_STATUSES)}"
+            )
 
         # Update metadata.
         state[filename]["status"] = effective_status
