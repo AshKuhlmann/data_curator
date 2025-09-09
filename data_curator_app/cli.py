@@ -43,6 +43,7 @@ def handle_scan(
     recursive: bool = False,
     include: Optional[List[str]] = None,
     exclude: Optional[List[str]] = None,
+    include_expired: bool = False,
     quiet: bool = False,
     limit: Optional[int] = None,
     offset: Optional[int] = None,
@@ -65,6 +66,7 @@ def handle_scan(
         recursive=recursive,
         include_patterns=include,
         exclude_patterns=exclude,
+        include_expired=include_expired,
     )
     total_filtered = len(files_to_review)
 
@@ -78,6 +80,7 @@ def handle_scan(
         recursive=recursive,
         include_patterns=include,
         exclude_patterns=exclude,
+        include_expired=include_expired,
     )
     raw_total = len(raw_list)
     start = max(0, int(offset)) if offset is not None else 0
@@ -99,6 +102,7 @@ def handle_scan(
                     "sort_by": sort_by,
                     "sort_order": sort_order,
                     "recursive": bool(recursive),
+                    "include_expired": bool(include_expired),
                 }
             )
         )
@@ -463,6 +467,11 @@ def main() -> None:
         metavar="GLOB",
         help="Glob pattern to exclude (can be repeated).",
     )
+    scan_parser.add_argument(
+        "--include-expired",
+        action="store_true",
+        help="Include expired temporary keeps in the scan results.",
+    )
 
     # --- Sort Command ---
     sort_parser = subparsers.add_parser(
@@ -749,6 +758,7 @@ def main() -> None:
             recursive=args.recursive,
             include=args.include,
             exclude=args.exclude,
+            include_expired=getattr(args, "include_expired", False),
             quiet=args.quiet,
             limit=args.limit,
             offset=args.offset,

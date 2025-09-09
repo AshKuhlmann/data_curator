@@ -202,3 +202,31 @@ def test_json_errors_are_standardized(tmp_path: Path):
     assert r3.returncode == 2
     j3 = json.loads(r3.stdout)
     assert j3["code"] == 2 and "not found" in j3["error"].lower()
+
+
+def test_scan_include_expired_flag(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    # Two files, one expired keep, one unexpired keep
+    (repo / "expired.txt").write_text("x")
+    (repo / "active.txt").write_text("y")
+    past = "2000-01-01T00:00:00"
+    from datetime import datetime, timedelta
+
+    future = (datetime.now() + timedelta(days=10)).isoformat()
+    state = {
+        "expired.txt": {"status": "keep", "keep_days": 30, "expiry_date": past},
+        "active.txt": {"status": "keep", "keep_days": 30, "expiry_date": future},
+    }
+    (repo / ".curator_state.json").write_text(json.dumps(state))
+    # Default scan: none should appear
+    res_default = run_cli(str(repo), ["scan", "--json"])
+    assert res_default.returncode == 0, res_default.stderr
+    d0 = json.loads(res_default.stdout)
+    assert "expired.txt" not in d0["files"] and "active.txt" not in d0["files"]
+    # With flag: only expired appears
+    res = run_cli(str(repo), ["scan", "--include-expired", "--json"])
+    assert res.returncode == 0, res.stderr
+    data = json.loads(res.stdout)
+    assert data.get("include_expired") is True
+    assert data["files"] == ["expired.txt"]
