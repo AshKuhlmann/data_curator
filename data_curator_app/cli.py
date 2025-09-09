@@ -163,6 +163,19 @@ def handle_set_status(
         filename: The name of the file to update.
         status: The new status to assign.
     """
+    # Validate status against allowed user set (include legacy alias)
+    allowed_user = set(core.USER_ALLOWED_STATUSES) | {"keep_90_days"}
+    if status not in allowed_user:
+        msg = (
+            f"Invalid status '{status}'. Allowed: "
+            + ", ".join(sorted(allowed_user))
+        )
+        if json_output:
+            print(json.dumps({"error": msg, "code": 3}))
+        else:
+            print(f"Error: {msg}")
+        sys.exit(3)
+
     file_path = os.path.join(repository_path, filename)
     if not force and not os.path.exists(file_path):
         msg = f"File '{filename}' not found in repository."
@@ -180,8 +193,17 @@ def handle_set_status(
             print(f"Error: {msg}")
         sys.exit(2)
 
-    with contextlib.redirect_stdout(io.StringIO()):
-        core.update_file_status(repository_path, filename, status, days=days)
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            core.update_file_status(repository_path, filename, status, days=days)
+    except ValueError as e:
+        # Surface core validation errors consistently
+        msg = str(e)
+        if json_output:
+            print(json.dumps({"error": msg, "code": 3}))
+        else:
+            print(f"Error: {msg}")
+        sys.exit(3)
     if json_output:
         out: dict[str, Any] = {
             "result": "updated",
@@ -569,8 +591,7 @@ def main() -> None:
     status_parser.add_argument("filename", help="The name of the file to update.")
     status_parser.add_argument(
         "status",
-        choices=["keep_forever", "keep", "decide_later"],
-        help="The new status for the file.",
+        help="The new status for the file (keep_forever, keep, decide_later).",
     )
     status_parser.add_argument(
         "--days",
@@ -705,8 +726,7 @@ def main() -> None:
     status_batch.add_argument(
         "--status",
         required=True,
-        choices=["keep_forever", "keep", "decide_later"],
-        help="The new status for the files.",
+        help="The new status for the files (keep_forever, keep, decide_later).",
     )
     status_batch.add_argument(
         "--days",
@@ -1031,6 +1051,19 @@ def handle_status_batch(
     results: List[dict] = []
     updated = 0
     failed = 0
+    # Validate status against allowed user set (include legacy alias)
+    allowed_user = set(core.USER_ALLOWED_STATUSES) | {"keep_90_days"}
+    if status not in allowed_user:
+        msg = (
+            f"Invalid status '{status}'. Allowed: "
+            + ", ".join(sorted(allowed_user))
+        )
+        if json_output:
+            print(json.dumps({"error": msg, "code": 3}))
+        else:
+            if not quiet:
+                print(f"Error: {msg}")
+        sys.exit(3)
     # Validate days for temporary keep
     if status == "keep" and (days is None or days <= 0):
         msg = "--days must be a positive integer when status is 'keep'"
@@ -1048,8 +1081,15 @@ def handle_status_batch(
             results.append({"filename": filename, "error": msg, "code": 2})
             failed += 1
             continue
-        with contextlib.redirect_stdout(io.StringIO()):
-            core.update_file_status(repository_path, filename, status, days=days)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                core.update_file_status(repository_path, filename, status, days=days)
+        except ValueError as e:
+            results.append(
+                {"filename": filename, "error": str(e), "code": 3}
+            )
+            failed += 1
+            continue
         entry: dict[str, Any] = {
             "filename": filename,
             "result": "updated",
