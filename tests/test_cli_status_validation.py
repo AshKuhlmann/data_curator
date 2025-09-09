@@ -14,9 +14,7 @@ def test_status_invalid_rejected_json(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "a.txt").write_text("a")
-    res = run_cli(
-        str(repo), ["status", "a.txt", "not_a_status", "--json"]
-    )
+    res = run_cli(str(repo), ["status", "a.txt", "not_a_status", "--json"])
     assert res.returncode == 3
     data = json.loads(res.stdout)
     assert data["code"] == 3 and "Invalid status" in data["error"]
@@ -26,9 +24,7 @@ def test_status_invalid_rejected_non_json(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "a.txt").write_text("a")
-    res = run_cli(
-        str(repo), ["status", "a.txt", "not_a_status"]
-    )
+    res = run_cli(str(repo), ["status", "a.txt", "not_a_status"])
     assert res.returncode == 3
     assert res.stdout.strip().startswith("Error:")
 
@@ -69,4 +65,3 @@ def test_status_batch_invalid_rejected_non_json(tmp_path: Path):
     )
     assert res.returncode == 3
     assert res.stdout.strip().startswith("Error:")
-

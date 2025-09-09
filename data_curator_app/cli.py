@@ -166,10 +166,7 @@ def handle_set_status(
     # Validate status against allowed user set (include legacy alias)
     allowed_user = set(core.USER_ALLOWED_STATUSES) | {"keep_90_days"}
     if status not in allowed_user:
-        msg = (
-            f"Invalid status '{status}'. Allowed: "
-            + ", ".join(sorted(allowed_user))
-        )
+        msg = f"Invalid status '{status}'. Allowed: " + ", ".join(sorted(allowed_user))
         if json_output:
             print(json.dumps({"error": msg, "code": 3}))
         else:
@@ -1054,10 +1051,7 @@ def handle_status_batch(
     # Validate status against allowed user set (include legacy alias)
     allowed_user = set(core.USER_ALLOWED_STATUSES) | {"keep_90_days"}
     if status not in allowed_user:
-        msg = (
-            f"Invalid status '{status}'. Allowed: "
-            + ", ".join(sorted(allowed_user))
-        )
+        msg = f"Invalid status '{status}'. Allowed: " + ", ".join(sorted(allowed_user))
         if json_output:
             print(json.dumps({"error": msg, "code": 3}))
         else:
@@ -1085,9 +1079,7 @@ def handle_status_batch(
             with contextlib.redirect_stdout(io.StringIO()):
                 core.update_file_status(repository_path, filename, status, days=days)
         except ValueError as e:
-            results.append(
-                {"filename": filename, "error": str(e), "code": 3}
-            )
+            results.append({"filename": filename, "error": str(e), "code": 3})
             failed += 1
             continue
         entry: dict[str, Any] = {
