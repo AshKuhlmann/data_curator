@@ -199,6 +199,7 @@ def scan_directory(
     recursive: bool = False,
     include_patterns: Optional[List[str]] = None,
     exclude_patterns: Optional[List[str]] = None,
+    include_expired: bool = False,
     ignore_filename: str = ".curatorignore",
 ) -> List[str]:
     """
@@ -314,11 +315,24 @@ def scan_directory(
 
     # Identify files that have already been assigned a permanent status.
     processed_files = set()
+    now = datetime.now()
     for filename, metadata in curation_state.items():
         # A malformed state entry might not be a dictionary.
         if isinstance(metadata, dict):
             status = metadata.get("status")
             if status and status != "decide_later":
+                # Optionally include expired temporary keeps in the scan results
+                if include_expired and status in ("keep", "keep_90_days"):
+                    expiry_date_str = metadata.get("expiry_date")
+                    if expiry_date_str:
+                        try:
+                            expiry_date = datetime.fromisoformat(expiry_date_str)
+                            if expiry_date < now:
+                                # Treat as unprocessed so it appears in the list
+                                continue
+                        except ValueError:
+                            # Invalid date: ignore and treat as processed
+                            pass
                 processed_files.add(filename)
 
     # Files to review are those present in the directory but not in the processed set.

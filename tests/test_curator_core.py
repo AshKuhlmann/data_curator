@@ -359,3 +359,65 @@ def test_scan_directory_sorting(tmp_path):
     # --- Test default sorting (by name, asc) ---
     result = core.scan_directory(repo_path)
     assert result == ["a.txt", "b.txt", "c.txt"]
+
+
+def test_scan_include_expired(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    # Create files
+    (repo / "old.txt").write_text("x")
+    (repo / "new.txt").write_text("y")
+    # Create state: old expired temporary keep, new unexpired keep
+    from datetime import datetime, timedelta
+
+    past = datetime.now() - timedelta(days=1)
+    future = datetime.now() + timedelta(days=1)
+    state = {
+        "old.txt": {"status": "keep", "keep_days": 30, "expiry_date": past.isoformat()},
+        "new.txt": {
+            "status": "keep",
+            "keep_days": 30,
+            "expiry_date": future.isoformat(),
+        },
+    }
+    core.save_state(str(repo), state)
+    # Default scan excludes both (processed)
+    files_default = core.scan_directory(str(repo), sort_by="name")
+    assert files_default == []
+    # With include_expired, include only the expired one
+    files_with = core.scan_directory(str(repo), sort_by="name", include_expired=True)
+    assert files_with == ["old.txt"]
+
+
+def test_scan_include_expired_keep_90_days(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    # Create files
+    (repo / "old90.txt").write_text("x")
+    (repo / "new90.txt").write_text("y")
+    # State contains legacy keep_90_days entries; one expired, one active
+    from datetime import datetime, timedelta
+
+    past = datetime.now() - timedelta(days=2)
+    future = datetime.now() + timedelta(days=5)
+    state = {
+        "old90.txt": {
+            "status": "keep_90_days",
+            "keep_days": 90,
+            "expiry_date": past.isoformat(),
+        },
+        "new90.txt": {
+            "status": "keep_90_days",
+            "keep_days": 90,
+            "expiry_date": future.isoformat(),
+        },
+    }
+    core.save_state(str(repo), state)
+
+    # Default scan excludes both (processed)
+    files_default = core.scan_directory(str(repo), sort_by="name")
+    assert files_default == []
+
+    # With include_expired, include only the expired legacy keep_90_days item
+    files_with = core.scan_directory(str(repo), sort_by="name", include_expired=True)
+    assert files_with == ["old90.txt"]
