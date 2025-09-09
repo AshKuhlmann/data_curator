@@ -14,5 +14,9 @@ if ! poetry run pytest -q; then
         exit $status
     fi
 fi
-# Ensure the package can be installed
-python -m pip install .
+# Ensure the package can be installed (avoid network and global paths)
+PIP_TARGET_DIR=.pip-install-check
+rm -rf "$PIP_TARGET_DIR"
+mkdir -p "$PIP_TARGET_DIR"
+python -m pip install . --no-build-isolation --target "$PIP_TARGET_DIR"
+rm -rf "$PIP_TARGET_DIR"
