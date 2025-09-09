@@ -65,9 +65,10 @@ def test_scan_directory_filter_by_tag(tmp_path):
 def test_update_file_status_and_expiry(tmp_path):
     repo_path = str(tmp_path)
 
-    core.update_file_status(repo_path, "test.txt", "keep_90_days")
+    core.update_file_status(repo_path, "test.txt", "keep", days=90)
     state = core.load_state(repo_path)
-    assert state["test.txt"]["status"] == "keep_90_days"
+    assert state["test.txt"]["status"] == "keep"
+    assert state["test.txt"]["keep_days"] == 90
     expiry = datetime.fromisoformat(state["test.txt"]["expiry_date"])
     assert expiry - datetime.now() > timedelta(days=89)
 
@@ -163,8 +164,12 @@ def test_check_for_expired_files(tmp_path):
     past = datetime.now() - timedelta(days=1)
     future = datetime.now() + timedelta(days=1)
     state = {
-        "old.txt": {"status": "keep_90_days", "expiry_date": past.isoformat()},
-        "new.txt": {"status": "keep_90_days", "expiry_date": future.isoformat()},
+        "old.txt": {"status": "keep", "expiry_date": past.isoformat(), "keep_days": 30},
+        "new.txt": {
+            "status": "keep",
+            "expiry_date": future.isoformat(),
+            "keep_days": 30,
+        },
         "other.txt": {"status": "keep_forever"},
     }
     core.save_state(repo_path, state)
@@ -253,7 +258,8 @@ def test_check_for_expired_files_invalid_date(tmp_path, capsys):
     repo_path = str(tmp_path)
     state = {
         "bad_date.txt": {
-            "status": "keep_90_days",
+            "status": "keep",
+            "keep_days": 10,
             "expiry_date": "not-a-valid-date",
         },
     }

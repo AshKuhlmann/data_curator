@@ -355,6 +355,7 @@ def update_file_status(
     filename: str,
     status: str,
     tags: Optional[List[str]] = None,
+    days: Optional[int] = None,
 ) -> None:
     """
     Updates the status and optional tags for a file in the state file.
@@ -366,8 +367,9 @@ def update_file_status(
     Args:
         repository_path: The path to the curated repository.
         filename: The name of the file to update.
-        status: The new status to assign (e.g., 'keep_forever', 'keep_90_days').
+        status: The new status to assign (e.g., 'keep_forever', 'keep').
         tags: An optional list of tags to associate with the file.
+        days: For temporary keeps, the number of days to keep.
     """
     with _state_file_lock(repository_path):
         state = load_state(repository_path)
@@ -382,18 +384,34 @@ def update_file_status(
                 if tag not in state[filename]["tags"]:
                     state[filename]["tags"].append(tag)
 
+        # Backward compatibility: map legacy 'keep_90_days' to new 'keep' with days=90
+        effective_status = status
+        effective_days = days
+        if status == "keep_90_days":
+            effective_status = "keep"
+            effective_days = 90
+
         # Update metadata.
-        state[filename]["status"] = status
+        state[filename]["status"] = effective_status
         state[filename]["last_updated"] = datetime.now().astimezone().isoformat()
 
-        # If the status is temporary, calculate and store the expiry date.
-        if status == "keep_90_days":
+        # Clear any previous temporary metadata unless setting a temporary keep
+        state[filename].pop("expiry_date", None)
+        state[filename].pop("keep_days", None)
+
+        # If the status is temporary, calculate and store the expiry date and keep days.
+        if effective_status == "keep":
+            # Default to 90 days if not provided (defensive default)
+            keep_days = int(effective_days) if effective_days is not None else 90
+            if keep_days < 1:
+                keep_days = 1
+            state[filename]["keep_days"] = keep_days
             state[filename]["expiry_date"] = (
-                datetime.now() + timedelta(days=90)
+                datetime.now() + timedelta(days=keep_days)
             ).isoformat()
 
         _save_state_unlocked(repository_path, state)
-    print(f"Updated '{filename}' to status: {status}")
+    print(f"Updated '{filename}' to status: {state.get(filename, {}).get('status')}")
 
 
 def manage_tags(
@@ -564,7 +582,7 @@ def undo_delete(last_action: Dict[str, Any]) -> bool:
 
 def reset_expired_to_decide_later(repository_path: str) -> List[str]:
     """
-    Resets all expired 'keep_90_days' items to 'decide_later'.
+    Resets all expired temporary 'keep' items to 'decide_later'.
 
     Returns a list of filenames that were updated.
     """
@@ -573,19 +591,22 @@ def reset_expired_to_decide_later(repository_path: str) -> List[str]:
         updated: List[str] = []
     now = datetime.now()
     for filename, metadata in list(state.items()):
-        if metadata.get("status") == "keep_90_days":
-            expiry = metadata.get("expiry_date")
-            if not expiry:
-                continue
-            try:
-                dt = datetime.fromisoformat(expiry)
-            except ValueError:
-                continue
-            if dt < now:
-                metadata["status"] = "decide_later"
-                metadata.pop("expiry_date", None)
-                metadata["last_updated"] = datetime.now().astimezone().isoformat()
-                updated.append(filename)
+        status = metadata.get("status")
+        if status not in ("keep", "keep_90_days"):
+            continue
+        expiry = metadata.get("expiry_date")
+        if not expiry:
+            continue
+        try:
+            dt = datetime.fromisoformat(expiry)
+        except ValueError:
+            continue
+        if dt < now:
+            metadata["status"] = "decide_later"
+            metadata.pop("expiry_date", None)
+            metadata.pop("keep_days", None)
+            metadata["last_updated"] = datetime.now().astimezone().isoformat()
+            updated.append(filename)
         if updated:
             _save_state_unlocked(repository_path, state)
     return updated
@@ -628,7 +649,7 @@ def check_for_expired_files(repository_path: str) -> List[str]:
 
     # Iterate over a copy of the items to avoid issues with potential modifications.
     for filename, metadata in list(state.items()):
-        if metadata.get("status") == "keep_90_days":
+        if metadata.get("status") in ("keep", "keep_90_days"):
             expiry_date_str = metadata.get("expiry_date")
             if expiry_date_str:
                 try:
@@ -653,7 +674,7 @@ def get_expired_details(repository_path: str) -> List[Dict[str, Any]]:
     details: List[Dict[str, Any]] = []
     now = datetime.now()
     for filename, metadata in list(state.items()):
-        if metadata.get("status") != "keep_90_days":
+        if metadata.get("status") not in ("keep", "keep_90_days"):
             continue
         expiry_date_str = metadata.get("expiry_date")
         if not expiry_date_str:
@@ -668,7 +689,8 @@ def get_expired_details(repository_path: str) -> List[Dict[str, Any]]:
             details.append(
                 {
                     "filename": filename,
-                    "status": "keep_90_days",
+                    "status": "keep",
+                    "keep_days": metadata.get("keep_days", 90),
                     "expiry_date": expiry_date_str,
                     "expired": True,
                     "days_overdue": days_overdue,

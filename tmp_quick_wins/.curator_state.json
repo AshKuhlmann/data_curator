@@ -1,0 +1,12 @@
+{
+    "nofile.txt": {
+        "tags": [],
+        "status": "keep_forever",
+        "last_updated": "2025-08-19T12:47:34.314790-07:00"
+    },
+    "b.txt": {
+        "tags": [],
+        "status": "decide_later",
+        "last_updated": "2025-08-19T12:47:34.689351-07:00"
+    }
+}

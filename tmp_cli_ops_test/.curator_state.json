@@ -1,0 +1,21 @@
+{
+  "f1.txt": {
+    "tags": [
+      "projectX"
+    ],
+    "status": "keep_forever",
+    "last_updated": "2025-08-19T12:20:16.046540"
+  },
+  "f2.txt": {
+    "tags": [],
+    "status": "deleted",
+    "last_updated": "2025-08-19T12:20:39.284999",
+    "expiry_date": "2025-11-17T12:20:16.115425"
+  },
+  "f3_renamed.txt": {
+    "status": "keep_90_days",
+    "last_updated": "2025-08-19T12:20:45.389343",
+    "tags": [],
+    "expiry_date": "2020-01-01T00:00:00"
+  }
+}
