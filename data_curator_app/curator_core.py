@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 import fnmatch
 from contextlib import contextmanager
+import shutil
 
 # The name of the state file, which will be stored in the curated repository.
 # Using a leading dot makes it a hidden file on Unix-like systems.
@@ -592,6 +593,52 @@ def undo_delete(last_action: Dict[str, Any]) -> bool:
     except OSError as e:
         print(f"Error restoring file from trash: {e}")
         return False
+
+
+def list_trash_contents(repository_path: str) -> List[str]:
+    """
+    Returns a sorted list of filenames currently in the curator trash.
+
+    Entries are relative to the trash directory and only include files.
+    """
+    trash_directory = os.path.join(repository_path, TRASH_DIR_NAME)
+    if not os.path.exists(trash_directory):
+        return []
+    try:
+        items = []
+        for name in os.listdir(trash_directory):
+            full = os.path.join(trash_directory, name)
+            if os.path.isfile(full):
+                items.append(name)
+        return sorted(items, key=lambda s: s.casefold())
+    except OSError:
+        return []
+
+
+def empty_trash(repository_path: str) -> List[str]:
+    """
+    Permanently removes all files from the curator trash and returns removed names.
+
+    If the trash directory does not exist, returns an empty list.
+    """
+    trash_directory = os.path.join(repository_path, TRASH_DIR_NAME)
+    if not os.path.exists(trash_directory):
+        return []
+
+    removed: List[str] = []
+    try:
+        # Collect names for reporting before deletion
+        for name in os.listdir(trash_directory):
+            full = os.path.join(trash_directory, name)
+            if os.path.isfile(full):
+                removed.append(name)
+        # Remove the entire directory tree to be robust, then recreate empty dir
+        shutil.rmtree(trash_directory, ignore_errors=True)
+        os.makedirs(trash_directory, exist_ok=True)
+    except OSError:
+        # Best-effort: return what we planned to remove
+        pass
+    return sorted(removed, key=lambda s: s.casefold())
 
 
 def reset_expired_to_decide_later(repository_path: str) -> List[str]:

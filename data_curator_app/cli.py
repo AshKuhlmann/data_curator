@@ -390,6 +390,47 @@ def handle_restore(
         print(json.dumps({"result": "restored", "filename": filename}))
 
 
+def handle_trash_list(
+    repository_path: str, json_output: bool = False, quiet: bool = False
+) -> None:
+    """Lists the contents of the curator trash folder."""
+    files = core.list_trash_contents(repository_path)
+    if json_output:
+        print(json.dumps({"files": files, "count": len(files)}))
+    else:
+        if not quiet:
+            if files:
+                print("Trash contents:")
+                for f in files:
+                    print(f"  - {f}")
+            else:
+                print("Trash is empty.")
+
+
+def handle_trash_empty(
+    repository_path: str,
+    yes: bool = False,
+    json_output: bool = False,
+    quiet: bool = False,
+) -> None:
+    """Permanently purges the curator trash folder (requires --yes)."""
+    if not yes:
+        msg = "--yes is required to empty the trash"
+        if json_output:
+            print(json.dumps({"error": msg, "code": 2}))
+        else:
+            print(f"Error: {msg}")
+        sys.exit(2)
+    removed = core.empty_trash(repository_path)
+    if json_output:
+        print(
+            json.dumps({"result": "emptied", "removed": len(removed), "files": removed})
+        )
+    else:
+        if not quiet:
+            print(f"Emptied trash: removed {len(removed)} item(s).")
+
+
 def main() -> None:
     """
     The main entry point for the command-line interface.
@@ -619,6 +660,31 @@ def main() -> None:
         help="Output result in JSON.",
     )
 
+    # --- Trash List Command ---
+    trash_list_parser = subparsers.add_parser(
+        "trash-list", help="List files currently in the curator trash."
+    )
+    trash_list_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results in JSON.",
+    )
+
+    # --- Trash Empty Command ---
+    trash_empty_parser = subparsers.add_parser(
+        "trash-empty", help="Permanently purge the curator trash (requires --yes)."
+    )
+    trash_empty_parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm permanent deletion of all items in trash.",
+    )
+    trash_empty_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results in JSON.",
+    )
+
     # --- Status Batch Command ---
     status_batch = subparsers.add_parser(
         "status-batch", help="Batch update the curation status of multiple files."
@@ -825,6 +891,19 @@ def main() -> None:
             args.filename,
             quiet=args.quiet,
             json_output=args.json,
+        )
+    elif args.command == "trash-list":
+        handle_trash_list(
+            args.repository_path,
+            json_output=args.json,
+            quiet=args.quiet,
+        )
+    elif args.command == "trash-empty":
+        handle_trash_empty(
+            args.repository_path,
+            yes=args.yes,
+            json_output=args.json,
+            quiet=args.quiet,
         )
     elif args.command == "status-batch":
         filenames = _collect_filenames()
