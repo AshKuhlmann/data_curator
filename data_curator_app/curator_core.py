@@ -14,12 +14,74 @@ import subprocess
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 import fnmatch
+from contextlib import contextmanager
 
 # The name of the state file, which will be stored in the curated repository.
 # Using a leading dot makes it a hidden file on Unix-like systems.
 STATE_FILENAME = ".curator_state.json"
 # Backup file name used to recover from partial or corrupt writes.
 STATE_BACKUP_FILENAME = f"{STATE_FILENAME}.bak"
+# A separate lockfile used to coordinate concurrent writers across processes.
+LOCK_FILENAME = f"{STATE_FILENAME}.lock"
+
+try:  # Optional, Unix-only
+    import fcntl as _fcntl  # type: ignore
+except Exception:  # pragma: no cover - on Windows
+    _fcntl = None  # type: ignore
+
+try:  # Optional, Windows-only
+    import msvcrt as _msvcrt  # type: ignore
+except Exception:  # pragma: no cover - on Unix
+    _msvcrt = None  # type: ignore
+
+
+@contextmanager
+def _state_file_lock(repository_path: str):
+    """Acquire an exclusive cross-process lock for state mutations.
+
+    Uses fcntl.flock on Unix and msvcrt.locking on Windows against a dedicated
+    lockfile placed alongside the state file. The lock blocks until acquired.
+    """
+    lock_path = os.path.join(repository_path, LOCK_FILENAME)
+    # Ensure containing directory exists
+    os.makedirs(repository_path, exist_ok=True)
+    f = open(lock_path, "a+b")
+    try:
+        if os.name == "nt" and _msvcrt is not None:
+            try:
+                # Ensure the lock region exists and lock 1 byte from start
+                f.seek(0)
+                if f.tell() == 0:
+                    f.write(b"0")
+                    f.flush()
+                f.seek(0)
+            except Exception:
+                pass
+            _msvcrt.locking(f.fileno(), _msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
+        else:
+            if _fcntl is None:
+                # Fallback: no-op lock (very rare). Still yield to avoid crashing.
+                pass
+            else:
+                _fcntl.flock(f, _fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            if os.name == "nt" and _msvcrt is not None:
+                try:
+                    f.seek(0)
+                    _msvcrt.locking(f.fileno(), _msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+            else:
+                if _fcntl is not None:
+                    try:
+                        _fcntl.flock(f, _fcntl.LOCK_UN)
+                    except Exception:
+                        pass
+        finally:
+            f.close()
+
 
 # The name of the directory used to store deleted files, acting as a local trash.
 TRASH_DIR_NAME = ".curator_trash"
@@ -64,7 +126,7 @@ def load_state(repository_path: str) -> Dict[str, Any]:
     return {}
 
 
-def save_state(repository_path: str, state: Dict[str, Any]) -> None:
+def _save_state_unlocked(repository_path: str, state: Dict[str, Any]) -> None:
     """
     Saves the current curation state to the JSON file in the repository.
 
@@ -116,6 +178,17 @@ def save_state(repository_path: str, state: Dict[str, Any]) -> None:
     except Exception:
         # Ignore on platforms/filesystems where this isn't supported.
         pass
+
+
+def save_state(repository_path: str, state: Dict[str, Any]) -> None:
+    """
+    Save state with an exclusive lock to prevent concurrent writers.
+
+    This is the public entrypoint and will acquire the lock before writing.
+    Internal callers that already hold the lock should use _save_state_unlocked.
+    """
+    with _state_file_lock(repository_path):
+        _save_state_unlocked(repository_path, state)
 
 
 def scan_directory(
@@ -296,29 +369,30 @@ def update_file_status(
         status: The new status to assign (e.g., 'keep_forever', 'keep_90_days').
         tags: An optional list of tags to associate with the file.
     """
-    state = load_state(repository_path)
+    with _state_file_lock(repository_path):
+        state = load_state(repository_path)
 
-    # Ensure the file has an entry in the state dictionary.
-    state.setdefault(filename, {})
-    state[filename].setdefault("tags", [])
+        # Ensure the file has an entry in the state dictionary.
+        state.setdefault(filename, {})
+        state[filename].setdefault("tags", [])
 
-    # Add any new tags provided.
-    if tags:
-        for tag in tags:
-            if tag not in state[filename]["tags"]:
-                state[filename]["tags"].append(tag)
+        # Add any new tags provided.
+        if tags:
+            for tag in tags:
+                if tag not in state[filename]["tags"]:
+                    state[filename]["tags"].append(tag)
 
-    # Update metadata.
-    state[filename]["status"] = status
-    state[filename]["last_updated"] = datetime.now().astimezone().isoformat()
+        # Update metadata.
+        state[filename]["status"] = status
+        state[filename]["last_updated"] = datetime.now().astimezone().isoformat()
 
-    # If the status is temporary, calculate and store the expiry date.
-    if status == "keep_90_days":
-        state[filename]["expiry_date"] = (
-            datetime.now() + timedelta(days=90)
-        ).isoformat()
+        # If the status is temporary, calculate and store the expiry date.
+        if status == "keep_90_days":
+            state[filename]["expiry_date"] = (
+                datetime.now() + timedelta(days=90)
+            ).isoformat()
 
-    save_state(repository_path, state)
+        _save_state_unlocked(repository_path, state)
     print(f"Updated '{filename}' to status: {status}")
 
 
@@ -340,25 +414,26 @@ def manage_tags(
     Returns:
         The final list of tags associated with the file.
     """
-    state = load_state(repository_path)
-    state.setdefault(filename, {}).setdefault("tags", [])
+    with _state_file_lock(repository_path):
+        state = load_state(repository_path)
+        state.setdefault(filename, {}).setdefault("tags", [])
 
-    current_tags = state[filename]["tags"]
+        current_tags = state[filename]["tags"]
 
-    # Add new tags, ensuring no duplicates.
-    if tags_to_add:
-        for tag in tags_to_add:
-            if tag not in current_tags:
-                current_tags.append(tag)
+        # Add new tags, ensuring no duplicates.
+        if tags_to_add:
+            for tag in tags_to_add:
+                if tag not in current_tags:
+                    current_tags.append(tag)
 
-    # Remove specified tags.
-    if tags_to_remove:
-        state[filename]["tags"] = [
-            tag for tag in current_tags if tag not in tags_to_remove
-        ]
+        # Remove specified tags.
+        if tags_to_remove:
+            state[filename]["tags"] = [
+                tag for tag in current_tags if tag not in tags_to_remove
+            ]
 
-    save_state(repository_path, state)
-    return state[filename]["tags"]
+        _save_state_unlocked(repository_path, state)
+        return state[filename]["tags"]
 
 
 def rename_file(old_filepath: str, new_filename: str) -> Optional[Dict[str, Any]]:
@@ -386,23 +461,24 @@ def rename_file(old_filepath: str, new_filename: str) -> Optional[Dict[str, Any]
 
     try:
         os.rename(old_filepath, new_filepath)
-        state = load_state(directory)
+        with _state_file_lock(directory):
+            state = load_state(directory)
 
-        # If the file was tracked, update its key in the state dictionary.
-        if old_filename in state:
-            state[new_filename] = state.pop(old_filename)
-            state[new_filename]["status"] = "renamed"
-            state[new_filename]["last_updated"] = (
-                datetime.now().astimezone().isoformat()
-            )
-        else:
-            # If not tracked, create a new entry.
-            state[new_filename] = {
-                "status": "renamed",
-                "last_updated": datetime.now().astimezone().isoformat(),
-            }
+            # If the file was tracked, update its key in the state dictionary.
+            if old_filename in state:
+                state[new_filename] = state.pop(old_filename)
+                state[new_filename]["status"] = "renamed"
+                state[new_filename]["last_updated"] = (
+                    datetime.now().astimezone().isoformat()
+                )
+            else:
+                # If not tracked, create a new entry.
+                state[new_filename] = {
+                    "status": "renamed",
+                    "last_updated": datetime.now().astimezone().isoformat(),
+                }
 
-        save_state(directory, state)
+            _save_state_unlocked(directory, state)
         print(f"Renamed '{old_filename}' to '{new_filename}'")
         # Return context needed for a potential undo operation.
         return {"action": "rename", "old_path": old_filepath, "new_path": new_filepath}
@@ -492,8 +568,9 @@ def reset_expired_to_decide_later(repository_path: str) -> List[str]:
 
     Returns a list of filenames that were updated.
     """
-    state = load_state(repository_path)
-    updated: List[str] = []
+    with _state_file_lock(repository_path):
+        state = load_state(repository_path)
+        updated: List[str] = []
     now = datetime.now()
     for filename, metadata in list(state.items()):
         if metadata.get("status") == "keep_90_days":
@@ -509,8 +586,8 @@ def reset_expired_to_decide_later(repository_path: str) -> List[str]:
                 metadata.pop("expiry_date", None)
                 metadata["last_updated"] = datetime.now().astimezone().isoformat()
                 updated.append(filename)
-    if updated:
-        save_state(repository_path, state)
+        if updated:
+            _save_state_unlocked(repository_path, state)
     return updated
 
 
